@@ -32,7 +32,7 @@ export function getRowByKey(state: Recordset, key : Primitive) : Record | undefi
     } 
 }
 
-type KeyPart = string | number;
+export type KeyPart = string | number;
 
 export type Key = KeyPart[];
 
@@ -121,6 +121,10 @@ export abstract class Accessor {
     abstract getConfig(...key : Key) : Config
     abstract setParent(parent : Accessor) : Accessor;
     abstract set(value : Primitive, ...key: Key) : AnyAction
+    abstract setMetadata(value : Primitive, ...key: Key) : AnyAction
+    abstract insertValue(value : Record, ...key: Key) : AnyAction
+    abstract removeValue(...key: Key) : AnyAction
+    abstract addValue(value : Record, ...key: Key) : AnyAction
 
     getRoot(state : State, ...key : Key) : Datum {
         if (this.parent) 
@@ -235,7 +239,6 @@ export abstract class Accessor {
                     throw new TypeError(`State type ${type} does not have member for ${key.join('.')}`)
 
             }
-            if (result) result = { ...result, key : [ head, ...result.key ]}
         } 
         if (!result && (StateGuards.isIRecord(value) || StateGuards.isIRecordset(value))) {
             result = { carrier: value, key }
@@ -290,6 +293,22 @@ export abstract class Accessor {
         return { type: ActionType.setValue, config: this.config, base: this.basePath, key, value };
     }
 
+    setMetadata(value: Primitive, ...key : Key) : AnyAction {
+        return { type: ActionType.setMetadata, config: this.config, base: this.basePath, key, value };
+    }
+
+    insertValue(record: Record, ...key : Key) : AnyAction {
+        return { type: ActionType.insertValue, config: this.config, base: this.basePath, key, record };
+    }
+
+    removeValue(...key : Key) : AnyAction {
+        return { type: ActionType.removeValue, config: this.config, base: this.basePath, key };
+    }
+
+    addValue(record: Record, ...key : Key) : AnyAction {
+        return { type: ActionType.addValue, config: this.config, base: this.basePath, key, record };
+    }
+
     getConfig(...key : Key) : Config {
         return getConfig(this.config, ...key);
     }
@@ -303,11 +322,9 @@ export abstract class Accessor {
             const metadataParent = key.slice(0,-1);
             let carrier = this.getMetadataCarrier(state, this.config, base, ...metadataParent);
             if (carrier !== undefined) {
-                let metadataKey = key.slice(carrier.key.length);
-                if (metadataKey.length > 1)
-                    result = metadataKey.reduce((carrier : any, part : KeyPart)=>carrier?.childMetadata && carrier.childMetadata[part], carrier.carrier);
-                else
-                    result = carrier.carrier.metadata && carrier.carrier.metadata[metadataKey[0]]
+                let metadataKey = carrier.key;
+                let child = metadataKey.reduce((carrier : any, part : KeyPart)=>carrier?.childMetadata && carrier.childMetadata[part], carrier.carrier);
+                result = child?.metadata && child.metadata[key[key.length-1]];
             }
         } catch (err) {
             if (err instanceof ReferenceBoundary) {
@@ -342,6 +359,22 @@ export abstract class DelegatingAccessor extends Accessor {
     set(value: Primitive, ...key : Key) : AnyAction {
         return this.accessor.set(value, ...key);
     }    
+
+    setMetadata(value: Primitive, ...key : Key) : AnyAction {
+        return this.accessor.setMetadata(value, ...key);
+    }  
+
+    insertValue(value: Record, ...key : Key) : AnyAction {
+        return this.accessor.insertValue(value, ...key);
+    }  
+
+    removeValue(...key : Key) : AnyAction {
+        return this.accessor.removeValue(...key);
+    }  
+
+    addValue(value: Record, ...key : Key) : AnyAction {
+        return this.accessor.addValue(value, ...key);
+    }  
 
     getConfig(...key : Key) {
         return this.accessor.getConfig(...key);

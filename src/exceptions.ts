@@ -11,3 +11,12 @@ export class ReferenceBoundary extends Error {
         this.key = key;
     }  
 }
+
+export class NoMetadataCarrier  {
+    key: Key
+
+    constructor(...key : Key) {
+        this.key = key;
+    }  
+}
+

@@ -9,9 +9,11 @@ export interface IFieldSet {
     [ fieldName: string ] : Field
 }
 
+export type ChildMetadata = { [childName: string]: IMetadata };
+export type Metadata = { [ propName: string ] : Primitive }
 export interface IMetadata {
-    childMetadata?: { [childName: string]: IMetadata }
-    metadata?: { [ propName: string ] : Primitive }
+    childMetadata?: ChildMetadata
+    metadata?: Metadata
 }
 
 export interface IRecord extends IMetadata {
@@ -31,7 +33,7 @@ export type State = Field | Record
 export class Guards {
 
     static isIRecord(state: State): state is IRecord {
-        return (state as IRecord).value !== undefined;
+        return (state as IRecord)?.value !== undefined;
     }
 
     static isRecord(state: State): state is Record {
@@ -63,7 +65,7 @@ export class Guards {
     }
 
     static isIRecordset(state: State): state is IRecordset {
-        return (state as IRecordset).records !== undefined;
+        return (state as IRecordset)?.records !== undefined;
     }
 
     static isRecordset(state: State): state is Recordset {
