@@ -38,6 +38,10 @@ export class Guards {
     static isReferenceConfig(config: Config) : config is ReferenceConfig {
         return config.type === DataType.REFERENCE;
     }
+
+    static isRecordConfig(config: Config) : config is ReferenceConfig {
+        return config.type === DataType.RECORD;
+    }    
 }
 
 export function getConfig(config : Config, ...key : Key) : Config {
@@ -51,6 +55,8 @@ export function getConfig(config : Config, ...key : Key) : Config {
         }
         let result;
         if (Guards.isRecordsetConfig(config))
+            result = getConfig(config.value, ...tail);
+        else if (Guards.isRecordConfig(config))
             result = getConfig(config.value, ...tail);
         else if (Guards.isFieldSetConfig(config))
             result = getConfig(config.fields[head], ...tail);

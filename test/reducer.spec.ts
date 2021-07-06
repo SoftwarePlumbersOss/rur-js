@@ -2,7 +2,6 @@ import { DataType } from '../src/datatype';
 import { RecordsetConfig } from '../src/config';
 import { Recordset } from '../src/state';
 import { reduce } from '../src/reducer';
-import getRegistry from '../src/registry';
 import { Accessor, BaseAccessor } from '../src/accessor';
 import thunk from 'redux-thunk';
 import configureMockStore from 'redux-mock-store';
@@ -192,6 +191,12 @@ describe('test simple reducer', ()=>{
     it('can set a simple field metadata by key', ()=>{
         let store = createStore();
         store.dispatch(queueAccessor.setMetadata("wrong", 'b', 'queueName', 'error'));
+        expect(queueAccessor.getMetadata(store.getState(), 'b', 'queueName', 'error')).toBe('wrong');
+    });
+
+    it('can merge simple field metadata by key', ()=>{
+        let store = createStore();
+        store.dispatch(queueAccessor.mergeMetadata({ metadata: { error: 'wrong' } }, 'b', 'queueName'));
         expect(queueAccessor.getMetadata(store.getState(), 'b', 'queueName', 'error')).toBe('wrong');
     });
 

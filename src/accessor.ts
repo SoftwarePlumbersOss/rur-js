@@ -1,5 +1,5 @@
 import { DataType, getDataType } from './datatype';
-import { State, Guards as StateGuards, Recordset, Record, Primitive, Field, IRecord, IRecordset, IFieldSet, IMetadata } from './state';
+import { State, Guards as StateGuards, Recordset, Record, Primitive, Field, IRecord, IRecordset, IFieldSet, IMetadata, FieldMapping } from './state';
 import { Config, getConfig } from './config';
 import { ActionType } from './reducer';
 import { ReferenceBoundary } from './exceptions';
@@ -122,6 +122,7 @@ export abstract class Accessor {
     abstract setParent(parent : Accessor) : Accessor;
     abstract set(value : Primitive, ...key: Key) : AnyAction
     abstract setMetadata(value : Primitive, ...key: Key) : AnyAction
+    abstract mergeMetadata(value : IMetadata, ...key: Key) : AnyAction
     abstract insertValue(value : Record, ...key: Key) : AnyAction
     abstract removeValue(...key: Key) : AnyAction
     abstract addValue(value : Record, ...key: Key) : AnyAction
@@ -194,10 +195,11 @@ export abstract class Accessor {
                     break;
                 case DataType.FIELDSET:
                     if (typeof head !== 'string') throw new TypeError('key for fieldset must be a string');
-                    result = this.getState(state, getConfig(config, head), (value as IFieldSet)[head], ...tail);
+                    const fields = (StateGuards.isIFieldSet(value)) ? value.fields : value as FieldMapping;
+                    result = this.getState(state, getConfig(config, head), fields[head], ...tail);
                     break;
                 case DataType.RECORD:
-                    let record : Field = StateGuards.isIRecord(value) ? value.value : value
+                    const record : Field = StateGuards.isIRecord(value) ? value.value : value
                     result = this.getState(state, config, record, ...key);
                     break;
                 case DataType.REFERENCE:   
@@ -227,7 +229,8 @@ export abstract class Accessor {
                     break;
                 case DataType.FIELDSET:
                     if (typeof head !== 'string') throw new TypeError('key for fieldset must be a string');
-                    result = this.getMetadataCarrier(state, getConfig(config, head), (value as IFieldSet)[head], ...tail);
+                    const fields = (StateGuards.isIFieldSet(value)) ? value.fields : value as FieldMapping;
+                    result = this.getMetadataCarrier(state, getConfig(config, head), fields[head], ...tail);
                     break;
                 case DataType.RECORD:
                     let record : Field = StateGuards.isIRecord(value) ? value.value : value
@@ -297,6 +300,10 @@ export abstract class Accessor {
         return { type: ActionType.setMetadata, config: this.config, base: this.basePath, key, value };
     }
 
+    mergeMetadata(metadata: IMetadata, ...key : Key) : AnyAction {
+        return { type: ActionType.mergeMetadata, config: this.config, base: this.basePath, key, metadata };
+    }
+
     insertValue(record: Record, ...key : Key) : AnyAction {
         return { type: ActionType.insertValue, config: this.config, base: this.basePath, key, record };
     }
@@ -363,6 +370,10 @@ export abstract class DelegatingAccessor extends Accessor {
     setMetadata(value: Primitive, ...key : Key) : AnyAction {
         return this.accessor.setMetadata(value, ...key);
     }  
+
+    mergeMetadata(metadata: IMetadata, ...key : Key) : AnyAction {
+        return this.accessor.mergeMetadata(metadata, ...key);
+    }      
 
     insertValue(value: Record, ...key : Key) : AnyAction {
         return this.accessor.insertValue(value, ...key);

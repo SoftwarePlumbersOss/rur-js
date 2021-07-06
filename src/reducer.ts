@@ -1,6 +1,6 @@
 import { Config, getConfig } from './config';
-import { DataType, getDataType } from './datatype';
-import { State, Recordset, IRecordset, Record, IRecord, Primitive, Field, IFieldSet, IMetadata, Guards as StateGuards, Metadata, ChildMetadata } from './state';
+import { DataType, getDataType, expand } from './datatype';
+import { State, Recordset, IRecordset, Record, IRecord, Primitive, Field, FieldSet, IFieldSet, FieldMapping, IMetadata, IMetadataCarrier, Guards as StateGuards, Metadata, ChildMetadata, Atom, IAtom } from './state';
 import { Key, KeyPart } from './accessor';
 import { ReferenceBoundary,  NoMetadataCarrier } from './exceptions';
 
@@ -16,6 +16,7 @@ function logEntry(name: string, ...value : any) {
 export enum ActionType {
     setValue = "RUR_SET_VALUE",
     setMetadata = "RUR_SET_METADATA",
+    mergeMetadata = "RUR_MERGE_METADATA",
     insertValue = "RUR_INSERT_VALUE",
     addValue = "RUR_ADD_VALUE",
     removeValue = "RUR_REMOVE_VALUE",
@@ -36,13 +37,26 @@ export interface RecordAction extends Action {
     record: Record
 }
 
+export interface ValidationAction extends Action {
+    validation: Field
+}
+export interface MetadataAction extends Action {
+    metadata: IMetadata
+}
+
 export const Guards = {  
     isValueAction(action : Action) : action is ValueAction {
         return (action as ValueAction).value !== undefined;
     },
     isRecordAction(action : Action) : action is RecordAction {
         return (action as RecordAction).record !== undefined;
-    }
+    },
+    isValidationAction(action : Action) : action is ValidationAction {
+        return (action as ValidationAction).validation !== undefined;
+    },
+    isMetadataAction(action : Action) : action is MetadataAction {
+        return (action as MetadataAction).metadata !== undefined;
+    }    
 }
 
 function getBase(state: any, path: string[]) : State {
@@ -131,7 +145,7 @@ function updateRecordMetadata(config: Config, record: Record, key: Key, value: P
     }
 }
 
-function updateIMetadata<T extends IMetadata>(carrier: T, [head, ...tail] : Key, value: Primitive) : T {
+function updateIMetadata<T extends IMetadataCarrier>(carrier: T, [head, ...tail] : Key, value: Primitive) : T {
     if (tail.length > 0) {
         const childMetadata = carrier?.childMetadata || {};
         return { ...carrier, childMetadata: { ...childMetadata, [head] : updateIMetadata(childMetadata[head], tail, value) } }
@@ -159,9 +173,9 @@ function updateMetadata<T extends State>(config : Config, carrier: T, key: Key, 
     }
 }
 
-function updateFieldSet(fieldset: IFieldSet, head: KeyPart, updater: (field : Field) => Field) : IFieldSet {
+function updateFieldSet(fieldset: FieldSet, head: KeyPart, updater: (field : Field) => Field) : FieldMapping {
     try {
-        return { ...fieldset, [head] : updater(fieldset[head]) }
+        return { ...fieldset, [head] : updater(StateGuards.isIFieldSet(fieldset) ? fieldset.fields[head] : fieldset[head]) }
     } catch (err) {
         if (err instanceof ReferenceBoundary) {
             err.key = [head, ...err.key];
@@ -170,6 +184,214 @@ function updateFieldSet(fieldset: IFieldSet, head: KeyPart, updater: (field : Fi
     }
 }
 
+
+
+function mergeIMetadataCarrier(a: IMetadataCarrier | undefined, b: IMetadataCarrier | undefined) : IMetadataCarrier  {
+    if (a === undefined) return b || {};
+    if (b === undefined) return a || {};
+    let childMetadata : { [index: string] : IMetadataCarrier } | undefined;
+    if (a.childMetadata === undefined) childMetadata = b.childMetadata;
+    if (b.childMetadata === undefined) childMetadata = a.childMetadata;
+    if (a.childMetadata !== undefined && b.childMetadata !== undefined) {
+        childMetadata = {};
+        for (const field of new Set([...Object.keys(a.childMetadata), ...Object.keys(b.childMetadata)])) {
+            if (a.childMetadata === undefined) childMetadata = b.childMetadata;
+            // One or other must not be null because field is in the set above;
+            childMetadata[field] = mergeIMetadataCarrier(a.childMetadata[field], b.childMetadata[field]) as IMetadata;
+        }
+    }
+    return {
+        metadata: { ...a.metadata, ...b.metadata },
+        childMetadata
+    }
+}
+
+function isEmpty(carrier : IMetadataCarrier) {
+    return (carrier.metadata === undefined || Object.keys(carrier.metadata).length === 0) && (carrier.childMetadata === undefined || Object.keys(carrier.childMetadata).length === 0)
+}
+
+function mergeRecordMetadata(config: Config, record: Record, metadata : IMetadata) : { state: Record, metadata?: IMetadata } {
+    if (isEmpty(metadata)) return { state: record };
+
+    // First we merge the record value
+    let mergedValue : { state: State, metadata?: IMetadata };
+    if (StateGuards.isIRecord(record)) {
+        mergedValue = mergeMetadata(config, record.value, metadata);
+    } else {
+        mergedValue = mergeMetadata(config, record, metadata);
+    }
+
+    // Record can carry metadata, so we merge in any 'spare' metadata from the merge above to create the result
+    let result : { state: Record, metadata?: IMetadata };
+    if (mergedValue.metadata && !isEmpty(mergedValue.metadata)) {
+        // We have spare metadata to merge
+        if (StateGuards.isIRecord(record))
+            // the existing record has metadata, so we must merge it with the child metadata from the value merge.
+            // metadata suplied in the parametrer is all attached to the value - so it's all child metadata
+            result = { state: { ...mergeIMetadataCarrier(record, mergedValue.metadata), value: mergedValue.state as Field } }
+        else 
+            // the existing record has no metadata, so all the child metadata comes from the value merge
+            result = { state: { ...mergedValue.metadata, value: mergedValue.state as Field  } }
+    } else {
+        // No spare metadata from merge
+        if (StateGuards.isIRecord(record))
+            // just copy the existing record replacing the merged value
+            result = { state: { ...record, value: mergedValue.state as Field } }
+        else {
+            // No metadata at all, so revert to the 'simple' record if we can
+            if (StateGuards.isPrimitive(mergedValue.state)) {
+                result = { state: mergedValue.state } 
+            } else {
+                result = { state: { value: mergedValue.state as Field } }
+            }
+        }
+    }
+
+    return result;
+}
+
+function mergeRecordsetMetadata(config: Config, recordset: Recordset, metadata: IMetadata) : { state: Recordset, metadata?: IMetadata } {
+    if (isEmpty(metadata)) return { state: recordset };
+    if (StateGuards.isIRecordset(recordset)) {
+        return { state: { ...recordset, metadata: { ...metadata.metadata, ...recordset.metadata } } }
+    } else {
+        return { state: { records: recordset, metadata: metadata.metadata }}
+    }
+}
+
+function createFieldsetFromMetadata(config: Config, metadata: IMetadata) {
+    let sourceChildMetadata = ((metadata as IMetadataCarrier).childMetadata);
+    if (sourceChildMetadata?.length) { 
+        let childState : FieldMapping = {};
+        let childMetadata : ChildMetadata = {};
+        for (const childName of Object.keys(sourceChildMetadata)) {
+            let childResult = createStateFromMetadata(config, sourceChildMetadata[childName]);
+            if (childResult.state) childState[childName] = childResult.state as Field;
+            if (childResult.metadata) childMetadata[childName] = childResult.metadata;
+        }
+        return {
+            state: childState,
+            metadata: { metadata: metadata.metadata, childMetadata } as IMetadataCarrier
+        }
+    } else {
+        return { metadata }
+    }
+}
+
+function createStateFromMetadata(config: Config, metadata: IMetadataCarrier) : { state?: State, metadata? : IMetadata } {
+    switch(config.type) {
+        case DataType.RECORDSET:
+            return { state: { ...metadata, records: []} } // we don't merge record data
+        case DataType.FIELDSET:
+            return createFieldsetFromMetadata(config, metadata);
+        default:
+            if (metadata.childMetadata)
+                return createFieldsetFromMetadata(config, metadata);
+            else
+                return { metadata }
+    }    
+}
+
+function mergeFieldSetMetadata(config : Config, fieldset: FieldMapping, metadata: IMetadata) :  { state: FieldMapping, metadata? : IMetadata } {
+    let sourceChildMetadata = (metadata as IMetadataCarrier).childMetadata;
+    let childMetadata : ChildMetadata = { }
+    let resultFields : FieldMapping = {}
+    if (sourceChildMetadata) {
+        for (const fieldName of new Set([...Object.keys(fieldset), ...Object.keys(sourceChildMetadata)])) {
+            let childResult : { state?: State, metadata?: IMetadata } = {};
+            if (sourceChildMetadata[fieldName] && fieldset[fieldName]) {
+                childResult = mergeMetadata(getConfig(config, fieldName), fieldset[fieldName], sourceChildMetadata[fieldName]);
+            } else if (fieldset[fieldName]) {
+                childResult = { state: fieldset[fieldName] }
+            } else {
+                childResult = createStateFromMetadata(getConfig(config, fieldName), sourceChildMetadata[fieldName]);
+            }
+            if (childResult.metadata) childMetadata[fieldName] = childResult.metadata;
+            if (childResult.state) resultFields[fieldName] = childResult.state as Field;
+
+        }
+    }
+    return { state: resultFields, metadata: {  ...metadata, childMetadata } as IMetadataCarrier } 
+}
+
+function mergePrimitiveMetadata(config : Config, primitive: Primitive, metadata: IMetadata) :  { state: Primitive, metadata: IMetadata }  {
+    return { state: primitive, metadata }
+}
+
+function mergeMetadata(config: Config, state: State, metadata: IMetadata) : { state: State, metadata? : IMetadata } {
+    logEntry("mergeMetadata", config, state, metadata);
+    const type = getDataType(state, config);
+    switch (type) {
+        case DataType.RECORDSET:
+            return mergeRecordsetMetadata(config, state as Recordset, metadata);
+        case DataType.FIELDSET:
+            return mergeFieldSetMetadata(config, state as FieldMapping, metadata);
+        case DataType.RECORD:
+            return mergeRecordMetadata(config, state as Record, metadata);            
+        default:
+            return mergePrimitiveMetadata(config, state as Primitive, metadata);
+    }
+}
+
+function mergeRecordMetadataAt(config: Config, state: Record, key : Key, metadata: IMetadata) : { state: Record, metadata?: IMetadata }  {
+    logEntry("mergeRecordMetadataAt", config, state, key, metadata);
+    let result;
+    if (StateGuards.isIRecord(state)) {
+        let value = mergeMetadataAt(config, state.value, key, metadata);
+        if (value.metadata)
+            result = { state: { ...mergeIMetadataCarrier(state, value.metadata ), value: value.state as Field } };
+        else
+            result = { state: { ...state, value: value.state as Field }}
+    } else {
+        let value = mergeMetadataAt(config, state, key, metadata);
+        result = { state: { childMetadata: { value: value.metadata }, value: value.state as Field } };
+    }
+    return logReturn("mergeRecordMetadataAt", result);
+}
+
+function mergeRecordsetMetadataAt(config: Config, state: Recordset, [head, ...tail] : Key, metadata: IMetadata) : { state: Recordset, metadata?: IMetadata } {
+    logEntry("mergeRecordsetMetadataAt", config, state, head, tail, metadata);
+    let result = { 
+        state: updateRecordset(state, head, record => mergeRecordMetadataAt(getConfig(config,head), record, tail, metadata).state as Record),
+    }
+    return logReturn("mergeRecordsetMetadataAt", result);
+}
+
+function mergeFieldSetMetadataAt(config: Config, state: FieldMapping, [head, ...tail] : Key, metadata: IMetadata) : { state: FieldMapping, metadata?: IMetadata } {
+    logEntry("mergeFieldsetMetadataAt", config, state, head, tail, metadata);
+    let resultState : FieldMapping = { ...state };
+    let childMetadata : ChildMetadata = {};
+    let resultField = mergeMetadataAt(getConfig(config, head), state[head], tail, metadata);
+    resultState[head] = resultField.state as Field;
+    if (resultField.metadata) childMetadata[head] = resultField.metadata;
+    return logReturn("mergeRecordsetMetadataAt", { state: resultState, metadata: { childMetadata }});
+}
+
+function mergeMetadataAt(config: Config, state: State, key : Key, metadata: IMetadata) : { state : State, metadata? : IMetadata } {
+    logEntry("mergeMetadataAt", config, state, key, metadata);
+    let result;
+    if (key.length > 0) {
+        switch(getDataType(state, config)) {
+            case DataType.FIELDSET: 
+                result = mergeFieldSetMetadataAt(config, state as FieldMapping, key, metadata);
+                break;
+            case DataType.RECORDSET:
+                result = mergeRecordsetMetadataAt(config, state as Recordset, key, metadata);
+                break;
+            case DataType.RECORD:
+                result = mergeRecordMetadataAt(config, state as Record, key, metadata);
+                break;
+            default:
+                throw new TypeError('metadata must be attached directly to a primtive');
+
+        }
+    } else {
+        result = mergeMetadata(config, state, metadata);
+    }
+    return logReturn("mergeMetadataAt", result);
+}
+
+
 function updateState<T extends State>(config: Config, state: State, head: KeyPart, updater: (child: T) => T, recordUpdater : (child: Record) =>Record = (record => updateRecord(record, value => updater(value as T) as Field)))  : State {
     logEntry("setState", config, state, head, updater);
     const type = getDataType(state, config);
@@ -177,7 +399,7 @@ function updateState<T extends State>(config: Config, state: State, head: KeyPar
         case DataType.RECORDSET:
             return updateRecordset(state as Recordset, head, row => recordUpdater(row));
         case DataType.FIELDSET:
-            return updateFieldSet(state as IFieldSet, head, child => updater(child as T) as Field);1
+            return updateFieldSet(state as FieldSet, head, child => updater(child as T) as Field);1
         case DataType.REFERENCE:
             throw new ReferenceBoundary(config, state as string, head);
         default:
@@ -265,6 +487,12 @@ export function reduce(state: any, action: Action) : any {
             if (!Guards.isValueAction(action)) throw new TypeError("wrong type for action");
             base = setMetadata(action.config, base, action.key, action.value) || base;
             break;
+        case ActionType.mergeMetadata: 
+            if (!Guards.isMetadataAction(action)) throw new TypeError("wrong type for action");
+            let mergeResult = mergeMetadataAt(action.config, base, action.key, action.metadata);
+            if (mergeResult.metadata) throw new Error("invalid merge");
+            base = mergeResult.state;
+            break;            
         case ActionType.insertValue:
             if (!Guards.isRecordAction(action)) throw new TypeError("wrong type for action");
             base = insertRecord(action.config, base, action.key, action.record);
