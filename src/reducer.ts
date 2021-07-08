@@ -55,7 +55,7 @@ function setBase(state: any, path: string[], value: State) : any {
 
 export function reduce(state: any, action: Action) : any {
     let base : State = getBase(state, action.base);
-    let editor : StateEditor<State> = edit(action.config, state);
+    let editor : StateEditor<State> = edit(action.config, base);
     switch (action.type) {
         case ActionType.setValue: 
             if (!Guards.isValueAction(action)) throw new TypeError("wrong type for action");
@@ -87,5 +87,5 @@ export function reduce(state: any, action: Action) : any {
             break;
     }
 
-    return setBase(state, action.base, base);
+    return setBase(state, action.base, editor.getState());
 }
