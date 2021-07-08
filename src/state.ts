@@ -1,8 +1,11 @@
 import { DateTime } from 'luxon';
+import { Exception } from './exceptions';
 
 export  type Primitive = string | number | DateTime | null;
 
-export type Metadata = { [ propName: string ] : Primitive | undefined }
+export type MetadataPrimitive = string | number | DateTime | Exception | undefined | null;
+
+export type Metadata = { [ propName: string ] : MetadataPrimitive }
 
 export interface IMetadata {
     metadata?: Metadata
