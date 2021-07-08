@@ -1,9 +1,10 @@
 import { DataType, getDataType } from './datatype';
-import { State, Guards as StateGuards, Recordset, Record, Primitive, Field, IRecord, IRecordset, IFieldSet, IMetadata, FieldMapping } from './state';
+import { State, Guards as StateGuards, Recordset, Record, Primitive, Field, IMetadata, IMetadataCarrier, FieldMapping } from './state';
 import { Config, getConfig } from './config';
 import { ActionType } from './reducer';
 import { ReferenceBoundary } from './exceptions';
 import { AnyAction } from 'redux';
+import { Key, KeyPart } from './types';
 import getRegistry from "./registry"
 
 
@@ -32,9 +33,7 @@ export function getRowByKey(state: Recordset, key : Primitive) : Record | undefi
     } 
 }
 
-export type KeyPart = string | number;
 
-export type Key = KeyPart[];
 
 type Datum = Primitive | Proxy | undefined;
 
@@ -126,6 +125,7 @@ export abstract class Accessor {
     abstract insertValue(value : Record, ...key: Key) : AnyAction
     abstract removeValue(...key: Key) : AnyAction
     abstract addValue(value : Record, ...key: Key) : AnyAction
+    abstract validate(metadata: IMetadataCarrier, ...key: Key) : AnyAction
 
     getRoot(state : State, ...key : Key) : Datum {
         if (this.parent) 
@@ -195,7 +195,7 @@ export abstract class Accessor {
                     break;
                 case DataType.FIELDSET:
                     if (typeof head !== 'string') throw new TypeError('key for fieldset must be a string');
-                    const fields = (StateGuards.isIFieldSet(value)) ? value.fields : value as FieldMapping;
+                    const fields = value as FieldMapping;
                     result = this.getState(state, getConfig(config, head), fields[head], ...tail);
                     break;
                 case DataType.RECORD:
@@ -229,7 +229,7 @@ export abstract class Accessor {
                     break;
                 case DataType.FIELDSET:
                     if (typeof head !== 'string') throw new TypeError('key for fieldset must be a string');
-                    const fields = (StateGuards.isIFieldSet(value)) ? value.fields : value as FieldMapping;
+                    const fields = value as FieldMapping;
                     result = this.getMetadataCarrier(state, getConfig(config, head), fields[head], ...tail);
                     break;
                 case DataType.RECORD:
@@ -298,6 +298,10 @@ export abstract class Accessor {
 
     setMetadata(value: Primitive, ...key : Key) : AnyAction {
         return { type: ActionType.setMetadata, config: this.config, base: this.basePath, key, value };
+    }
+
+    validate(value: IMetadataCarrier, ...key : Key) : AnyAction {
+        return { type: ActionType.validate, config: this.config, base: this.basePath, key, value };
     }
 
     mergeMetadata(metadata: IMetadata, ...key : Key) : AnyAction {
@@ -373,6 +377,10 @@ export abstract class DelegatingAccessor extends Accessor {
 
     mergeMetadata(metadata: IMetadata, ...key : Key) : AnyAction {
         return this.accessor.mergeMetadata(metadata, ...key);
+    }      
+
+    validate(metadata: IMetadata, ...key : Key) : AnyAction {
+        return this.accessor.validate(metadata, ...key);
     }      
 
     insertValue(value: Record, ...key : Key) : AnyAction {

@@ -1,5 +1,5 @@
 import { Config } from './config';
-import { Key } from './accessor';
+import { Key } from './types';
 
 export class ReferenceBoundary extends Error {
     config : Config

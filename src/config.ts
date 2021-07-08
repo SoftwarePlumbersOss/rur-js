@@ -1,6 +1,7 @@
 import { DataType } from "./datatype";
-import { Accessor, Key } from './accessor';
-import getRegistry from "./registry"
+import { Accessor } from './accessor';
+import getRegistry from "./registry";
+import { Key } from './types';
 
 export interface Config {
     [prop : string] : any
