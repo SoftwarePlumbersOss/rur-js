@@ -4,7 +4,9 @@ import { Key } from './types';
 export enum ErrorCode {
     REFERENCE_BOUNDARY = "rur/REFERENCE_BOUNDARY",
     STATE_VALIDATION = "rur/STATE_VALIDATION",
-    STATE_MANDATORY = "rur/STATE_MANDATORT",
+    STATE_MANDATORY = "rur/STATE_MANDATORY",
+    KEY_REQUIRED = "rur/KEY_REQUIRED",
+    KEY_NOT_FOUND = "rur/KEY_NOT_FOUND",
 }
 
 
@@ -29,7 +31,7 @@ export class ReferenceBoundary extends RURError {
     key: Key
 
     constructor(config : Config, ...key : Key) {
-        super(ErrorCode.REFERENCE_BOUNDARY, `reference boundary for accessor ${config.recordset}, ${key.join('.')}`)
+        super(ErrorCode.REFERENCE_BOUNDARY, `reference boundary for accessor ${config?.recordset}, ${key.join('.')}`)
         this.config = config;
         this.key = key;
     }  

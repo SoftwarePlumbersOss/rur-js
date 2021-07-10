@@ -1,9 +1,10 @@
-import { State, Primitive, Record, Recordset, IRecordset, Guards, FieldMapping, Field, IMetadataCarrier, ChildMetadata, Metadata, MetadataPrimitive } from './state';
+import { State, NullablePrimitive, Record, Recordset, IRecordset, Guards, FieldMapping, Field, IMetadataCarrier, ChildMetadata, Metadata, MetadataPrimitive } from './state';
 import { Key, KeyPart } from './types';
 import { DataType, getDataType } from './datatype';
 import { Config, getConfig } from './config';
 import { ReferenceBoundary } from './exceptions';
 import { pickBy, mapValues } from 'lodash';
+import { PackedCriteria, Filter, Guards as CriteriaGuards, expand, apply } from './criteria';
 
 
 export abstract class StateEditor<T extends State> {
@@ -11,13 +12,13 @@ export abstract class StateEditor<T extends State> {
     abstract getChild<U extends State>(head: KeyPart): U | undefined;
     abstract setChild<U extends State>(head: KeyPart, child: U): void;
 
-    abstract set(path: Key, value: Primitive): this
-    abstract get(path: Key): Primitive | undefined
+    abstract set(path: Key, value: NullablePrimitive): this
+    abstract get(path: Key): NullablePrimitive | undefined
     abstract getType(): DataType;
     abstract getEditor(head: KeyPart): StateEditor<State>;
     abstract getState(): T;
     abstract getMetadata(): IMetadataCarrier;
-    abstract getConfig(): Config
+    abstract getConfig(): Config | undefined;
     abstract mergeMetadata(metadata: IMetadataCarrier, mergeForward?: boolean): this;
     abstract mergeState(state: T): this;
 
@@ -33,7 +34,7 @@ export abstract class StateEditor<T extends State> {
             this.setChild(head, childEditor.getState())
             let childMetadata = childEditor.getMetadata();
             if (childMetadata && !isEmpty(childMetadata)) {
-                this.mergeMetadata({ childMetadata: { [head]: childMetadata } }, false);
+                this.mergeMetadata({ metadata: {}, childMetadata: { [head]: childMetadata } }, false);
             }
         } else {
             editOperation(this);
@@ -41,7 +42,7 @@ export abstract class StateEditor<T extends State> {
         return this;
     }
 
-    setMetadata(key: Key, value: Primitive): this {
+    setMetadata(key: Key, value: MetadataPrimitive): this {
         if (key.length > 0) {
             let metadata = { metadata: { [key[key.length - 1]]: value } };
             return this.editAt(key.slice(0, -1), editor => editor.mergeMetadata(metadata))
@@ -59,6 +60,14 @@ export abstract class StateEditor<T extends State> {
             .getMetadata()?.metadata?.[key[key.length - 1]];
     }
 
+    searchAt(key: Key, criteria: PackedCriteria): this {
+        return this.editAt(key, editor => {
+            if (editor instanceof RecordsetEditor)
+                editor.search(criteria);
+            else
+                throw new TypeError(`${key} does not refer to a recordset`);
+        })
+    }    
     insertRecordAt(key: Key, value: Record): this {
         if (key.length > 0) {
             let recordsetKey = key.slice(0, -1);
@@ -100,16 +109,16 @@ export abstract class StateEditor<T extends State> {
 
 abstract class BaseStateEditor<T extends State> extends StateEditor<T> {
     protected state: T
-    protected config: Config
+    protected config?: Config
 
-    constructor(config: Config, state: T) {
+    constructor(config: Config | undefined, state: T) {
         super();
         this.config = config;
         this.state = state;
     }
 
 
-    set(path: Key, value: Primitive): this {
+    set(path: Key, value: NullablePrimitive): this {
         if (path.length > 0) {
             const [head, ...tail] = path;
             this.setChild(head, this.getEditor(head).set(tail, value).getState());
@@ -119,12 +128,12 @@ abstract class BaseStateEditor<T extends State> extends StateEditor<T> {
         return this;
     }
 
-    get(path: Key): Primitive | undefined {
+    get(path: Key): NullablePrimitive | undefined {
         if (path.length > 0) {
             const [head, ...tail] = path;
             return this.getEditor(head).get(tail);
         } else {
-            return this.state as Primitive;
+            return this.state as NullablePrimitive;
         }
     }
 
@@ -147,10 +156,10 @@ abstract class BaseStateEditor<T extends State> extends StateEditor<T> {
         if (Guards.isIMetadataCarrier(this.state))
             return this.state;
         else
-            return {};
+            return { metadata: {} };
     }
 
-    getConfig(): Config {
+    getConfig(): Config | undefined {
         return this.config;
     }
 
@@ -177,6 +186,14 @@ class RecordsetEditor extends BaseStateEditor<Recordset> {
         return recordset;
     }
 
+    private filterRow(record: Record, criteria: Filter) : boolean {
+        if (Guards.isIRecord(record)) {
+            return apply(record.value, criteria, this.config?.value);
+        } else {
+            return apply(record, criteria, this.config?.value);
+        }
+    }
+
     private updateRow(head: string | number, value: Record) {
         if (typeof head === 'number')
             this.updateRowByIndex(head, value)
@@ -192,6 +209,15 @@ class RecordsetEditor extends BaseStateEditor<Recordset> {
         let records = Guards.isIRecordset(this.state) ? this.state.records : this.state;
         let index = (typeof head === 'number') ? head : records.findIndex(record => Guards.isIRecord(record) ? record.metadata?.key === head : record === head)
         return records[index] as any; // What the fucking fuck was the problem here
+    }
+
+    search(criteria: PackedCriteria) : RecordsetEditor {
+        if (Guards.isIRecordset(this.state)) {
+            this.state = { ...this.state, filter: { criteria, records: this.state.records.filter(record => this.filterRow(record, expand(criteria))) } }
+        } else {
+            this.state = { records: this.state, metadata: {}, filter: { criteria, records: this.state.filter(record => this.filterRow(record, expand(criteria))) } }
+        }
+        return this;
     }
 
     insertRow(head: KeyPart, row: Record): RecordsetEditor {
@@ -273,19 +299,19 @@ class RecordsetEditor extends BaseStateEditor<Recordset> {
 
 }
 
-class PrimitiveEditor extends BaseStateEditor<Primitive> {
+class PrimitiveEditor extends BaseStateEditor<NullablePrimitive> {
 
     metadata: IMetadataCarrier;
 
-    constructor(config: Config, state: Primitive, metadata = {} as IMetadataCarrier) {
+    constructor(config: Config | undefined, state: NullablePrimitive, metadata = {} as IMetadataCarrier) {
         super(config, state);
         this.metadata = metadata;
     }
 
-    set(path: Key, value: Primitive): this {
+    set(path: Key, value: NullablePrimitive): this {
         if (path.length > 0) {
             if (this.getType() === DataType.REFERENCE)
-                throw new ReferenceBoundary(this.config, ...path);
+                throw new ReferenceBoundary(this.config as Config, ...path);
             else
                 throw new TypeError(`no element ${path.join('.')} in ${this.getType()}`);
         } else {
@@ -294,10 +320,10 @@ class PrimitiveEditor extends BaseStateEditor<Primitive> {
         return this;
     }
 
-    get(path: Key): Primitive {
+    get(path: Key): NullablePrimitive {
         if (path.length > 0) {
             if (this.getType() === DataType.REFERENCE)
-                throw new ReferenceBoundary(this.config, ...path);
+                throw new ReferenceBoundary(this.config as Config, ...path);
             else
                 throw new TypeError(`no element ${path.join('.')} in ${this.getType()}`);
         } else {
@@ -318,7 +344,7 @@ class PrimitiveEditor extends BaseStateEditor<Primitive> {
         return this;
     }
 
-    mergeState(primitiveB: Primitive): this {
+    mergeState(primitiveB: NullablePrimitive): this {
         if (primitiveB !== undefined) this.state = primitiveB;
         return this;
     }
@@ -332,7 +358,7 @@ class RecordEditor extends StateEditor<Record> {
 
     valueEditor: StateEditor<Field>;
 
-    constructor(config: Config, state: Record) {
+    constructor(config: Config | undefined, state: Record) {
         super();
         if (Guards.isIRecord(state)) {
             let { value, ...metadata } = state;
@@ -350,12 +376,12 @@ class RecordEditor extends StateEditor<Record> {
         this.valueEditor.setChild(head, child as any); // Seriously, what the fuck is going on with this
     }
 
-    set(path: Key, value: Primitive): this {
+    set(path: Key, value: NullablePrimitive): this {
         this.valueEditor.set(path, value);
         return this;
     }
 
-    get(path: Key): Primitive | undefined {
+    get(path: Key): NullablePrimitive | undefined {
         return this.valueEditor.get(path);
     }
 
@@ -384,7 +410,7 @@ class RecordEditor extends StateEditor<Record> {
         return this.valueEditor.getMetadata();
     }
 
-    getConfig(): Config {
+    getConfig(): Config | undefined {
         return this.valueEditor.getConfig();
     }
 
@@ -418,7 +444,7 @@ class RecordEditor extends StateEditor<Record> {
             childEditor.editAt(tail, editOperation);
             this.setChild(head, childEditor.getState())
             let childMetadata = childEditor.getMetadata();
-            if (childMetadata && !isEmpty(childMetadata)) this.mergeMetadata({ childMetadata: { [head]: childMetadata } }, false);
+            if (childMetadata && !isEmpty(childMetadata)) this.mergeMetadata({ metadata: {}, childMetadata: { [head]: childMetadata } }, false);
         } else {
             editOperation(this.valueEditor);
         }
@@ -430,7 +456,7 @@ class FieldMappingEditor extends BaseStateEditor<FieldMapping> {
 
     metadata: IMetadataCarrier;
 
-    constructor(config: Config, state: FieldMapping, metadata = {} as IMetadataCarrier) {
+    constructor(config: Config | undefined, state: FieldMapping, metadata = {} as IMetadataCarrier) {
         super(config, state);
         this.metadata = metadata;
     }
@@ -546,7 +572,7 @@ function isEmpty(carrier: IMetadataCarrier) {
     return (carrier?.metadata === undefined || Object.keys(carrier.metadata).length === 0) && (carrier?.childMetadata === undefined || Object.keys(carrier.childMetadata).length === 0)
 }
 
-export function edit(config: Config, state?: State, metadata?: IMetadataCarrier): StateEditor<State> {
+export function edit(config?: Config, state?: State, metadata?: IMetadataCarrier): StateEditor<State> {
     const type = getDataType(state, config);
     switch (type) {
         case DataType.RECORDSET: return new RecordsetEditor(config, state as Recordset);
@@ -555,7 +581,7 @@ export function edit(config: Config, state?: State, metadata?: IMetadataCarrier)
         case DataType.STRING:
         case DataType.REFERENCE:
         case DataType.NUMBER:
-        case DataType.DATETIME: return new PrimitiveEditor(config, state as Primitive, metadata);
+        case DataType.DATETIME: return new PrimitiveEditor(config, state as NullablePrimitive, metadata);
         default:
             throw new TypeError(`unhandled type ${type}`);
     }

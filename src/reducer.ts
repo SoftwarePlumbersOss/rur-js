@@ -1,8 +1,9 @@
 import { Config } from './config';
-import { State, Record, Primitive,  IMetadataCarrier } from './state';
+import { State, Record, NullablePrimitive,  IMetadataCarrier, MetadataPrimitive } from './state';
 import { validate } from './validation';
 import { Key } from './types'; 
 import { StateEditor, edit } from './editor';
+import { PackedCriteria } from './criteria';
 
 export enum ActionType {
     setValue = "RUR_SET_VALUE",
@@ -10,8 +11,11 @@ export enum ActionType {
     mergeMetadata = "RUR_MERGE_METADATA",
     insertValue = "RUR_INSERT_VALUE",
     addValue = "RUR_ADD_VALUE",
+    updateValue = "RUR_UPDATE_VALUE",
+    upsertValue = "RUR_UPSERT_VALUE",
     removeValue = "RUR_REMOVE_VALUE",
-    validate = "RUR_VALIDATE"
+    validate = "RUR_VALIDATE",
+    search = "RUR_SEARCH"
 }
 
 export interface Action {
@@ -22,13 +26,21 @@ export interface Action {
 }
 
 export interface ValueAction extends Action {
-    value: Primitive
+    value: NullablePrimitive
 }
+
+export interface MetadataValueAction extends Action {
+    metaValue: MetadataPrimitive
+}
+
 export interface RecordAction extends Action {
     record: Record
 }
-export interface MetadataAction extends Action {
-    metadata: IMetadataCarrier
+export interface MetadataAction extends Action, IMetadataCarrier {
+}
+
+export interface SearchAction extends Action {
+    criteria: PackedCriteria
 }
 
 export const Guards = {  
@@ -40,7 +52,14 @@ export const Guards = {
     },
     isMetadataAction(action : Action) : action is MetadataAction {
         return (action as MetadataAction).metadata !== undefined;
-    }    
+    },
+    isMetadataValueAction(action : Action) : action is MetadataValueAction {
+        return (action as MetadataValueAction).metaValue !== undefined;
+    },     
+    isSearchAction(action : Action) : action is SearchAction {
+        return (action as SearchAction).criteria !== undefined;
+    }     
+
 }
 
 function getBase(state: any, path: string[]) : State {
@@ -62,12 +81,12 @@ export function reduce(state: any, action: Action) : any {
             editor.set(action.key, action.value);
             break;
         case ActionType.setMetadata: 
-            if (!Guards.isValueAction(action)) throw new TypeError("wrong type for action");
-            editor.setMetadata(action.key,action.value);
+            if (!Guards.isMetadataValueAction(action)) throw new TypeError("wrong type for action");
+            editor.setMetadata(action.key,action.metaValue);
             break;
         case ActionType.mergeMetadata: 
             if (!Guards.isMetadataAction(action)) throw new TypeError("wrong type for action");
-            editor.mergeMetadataAt(action.key, action.metadata);
+            editor.mergeMetadataAt(action.key, action);
             break;            
         case ActionType.insertValue:
             if (!Guards.isRecordAction(action)) throw new TypeError("wrong type for action");
@@ -82,9 +101,14 @@ export function reduce(state: any, action: Action) : any {
             break;
         case ActionType.validate:
             if (!Guards.isMetadataAction(action)) throw new TypeError("wrong type for action");
-            editor.mergeMetadataAt(action.key, action.metadata);
+            editor.mergeMetadataAt(action.key, action);
             editor.editAt(action.key, validate);
             break;
+        case ActionType.search:
+            if (!Guards.isSearchAction(action)) throw new TypeError("wrong type for action");
+            editor.searchAt(action.key, action.criteria);
+            editor.editAt(action.key, validate);
+            break;            
     }
 
     return setBase(state, action.base, editor.getState());

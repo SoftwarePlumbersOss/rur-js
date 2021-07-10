@@ -1,14 +1,16 @@
 import { DateTime } from 'luxon';
+import { PackedCriteria } from './criteria';
 import { Exception } from './exceptions';
 
-export  type Primitive = string | number | DateTime | null;
+export  type Primitive = string | number | DateTime;
+export  type NullablePrimitive = Primitive | null;
 
 export type MetadataPrimitive = string | number | DateTime | Exception | undefined | null;
 
 export type Metadata = { [ propName: string ] : MetadataPrimitive }
 
 export interface IMetadata {
-    metadata?: Metadata
+    metadata: Metadata
 }
 export interface IMetadataCarrier extends IMetadata {
     childMetadata? : { [childName: string]: IMetadataCarrier }    
@@ -18,7 +20,7 @@ export type ChildMetadata = IMetadataCarrier["childMetadata"]
 
 
 export interface FieldMapping { 
-    [ fieldName: string ] : Primitive | Recordset | FieldMapping
+    [ fieldName: string ] : NullablePrimitive | Recordset | FieldMapping
 }
 
 export type Field = FieldMapping[string];
@@ -29,8 +31,15 @@ export interface IRecord extends IMetadataCarrier {
 
 export type Record = IRecord | Primitive
 
+export interface Filter {
+    records: Record[],
+    criteria: PackedCriteria
+
+}
+
 export interface IRecordset extends IMetadataCarrier {
-    records: Record[]
+    records: Record[],
+    filter?: Filter
 }
 
 export type Recordset = IRecordset | Record[]
@@ -69,6 +78,10 @@ export class Guards {
     static isPrimitive(state?: State): state is Primitive {
         const type = typeof state;
         return (type === 'number' || type === 'string' || DateTime.isDateTime(state));
+    }
+
+    static isNullablePrimitive(state?: State): state is NullablePrimitive {
+        return state === null || this.isPrimitive(state);
     }
 
     static isIRecordset(state?: State | IMetadata): state is IRecordset {

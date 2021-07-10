@@ -16,12 +16,12 @@ const config : RecordsetConfig = {
 
 describe('test Config for recordset', () => {
     it('retrieves config for fields in record', ()=>{
-        expect(getConfig(config, '*', 'fieldOne').type).toBe(DataType.STRING);
-        expect(getConfig(config, '*', 'fieldTwo').type).toBe(DataType.NUMBER);
+        expect(getConfig(config, '*', 'fieldOne')?.type).toBe(DataType.STRING);
+        expect(getConfig(config, '*', 'fieldTwo')?.type).toBe(DataType.NUMBER);
     });
 
     it('retrieves config for base object', ()=>{
-        expect(getConfig(config).collectionName).toBe('abc');
+        expect(getConfig(config)?.collectionName).toBe('abc');
     }); 
 });
 

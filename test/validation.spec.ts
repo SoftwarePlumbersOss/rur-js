@@ -1,4 +1,4 @@
-import { configQueues, configRequests, state } from './testdata';
+import { configQueues, state } from './testdata';
 import { validate } from '../src/validation';
 import { edit } from '../src/editor';
 import { Exception, ErrorCode } from '../src/exceptions';
@@ -25,4 +25,13 @@ describe('test simple validation', ()=>{
         editor.editAt([0, 'queueName'], validate);
         expect(editor.getMetadataAt([0, 'queueName', 'error'])).toBeUndefined();
     });    
+
+    it('can validate a field set by index', ()=>{
+        let editor = edit(configQueues, queues);
+        editor.set([0, 'queueName'], "something greater than 32 characters which is the maximum in the config file");
+        editor.editAt([0,], validate);
+        expect((editor.getMetadataAt([0, 'queueName', 'error']) as Exception)?.code).toBe(ErrorCode.STATE_VALIDATION);
+        expect((editor.getMetadataAt([0, 'error']) as Exception)?.code).toBe(ErrorCode.STATE_VALIDATION);
+    });
+
 });

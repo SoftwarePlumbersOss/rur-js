@@ -1,4 +1,4 @@
-import { FieldMapping, State, Recordset, Record, Primitive } from './state';
+import { FieldMapping, State, Recordset, Record, NullablePrimitive } from './state';
 import { DataType } from './datatype';
 import { StateEditor } from './editor';
 import { DateTime } from 'luxon';
@@ -28,22 +28,22 @@ export function validateRecord(editor : StateEditor<Record>) : void {
     editor.editAt([], validate);
 }
 
-export function validateString(editor : StateEditor<Primitive>) : void {
+export function validateString(editor : StateEditor<NullablePrimitive>) : void {
     let state = editor.getState();
-    let config = editor.getConfig() || {};
+    let config = editor.getConfig();
     let error = null;
     if (state !== undefined && state !== null) {
         state = state.toString().trim();
-        if (config.maxLength) {
+        if (config?.maxLength) {
             if (state.length > config.maxLength) {
                 error = { code: ErrorCode.STATE_VALIDATION, message: 'maximum length exceeded' };
             }
-        } else if (state.length === 0 && config.mandatory) {
+        } else if (state.length === 0 && config?.mandatory) {
             error = { code: ErrorCode.STATE_MANDATORY, message: 'field is mandatory' };
         }
 
     } else {
-        if (config.mandatory) {
+        if (config?.mandatory) {
             error = { code: ErrorCode.STATE_MANDATORY, message: 'field is mandatory' };
         }
     }
@@ -53,9 +53,9 @@ export function validateString(editor : StateEditor<Primitive>) : void {
     editor.mergeMetadata({ metadata: { error }})
 }
 
-export function validateNumber(editor : StateEditor<Primitive>) : void {
+export function validateNumber(editor : StateEditor<NullablePrimitive>) : void {
     let state = editor.getState();
-    let config = editor.getConfig() || {};
+    let config = editor.getConfig();
     let error = null;
     if (state !== undefined && state !== null) {
         state = Number(state);
@@ -63,7 +63,7 @@ export function validateNumber(editor : StateEditor<Primitive>) : void {
             error = { code: ErrorCode.STATE_VALIDATION, message: 'must be a number' };
         }
     } else {
-        if (config.mandatory) {
+        if (config?.mandatory) {
             error = { code: ErrorCode.STATE_MANDATORY, message: 'field is mandatory' };
         }
     }
@@ -74,9 +74,9 @@ export function validateNumber(editor : StateEditor<Primitive>) : void {
     }    
 }
 
-export function validateDateTime(editor : StateEditor<Primitive>) : void {
+export function validateDateTime(editor : StateEditor<NullablePrimitive>) : void {
     let state = editor.getState();
-    let config = editor.getConfig() || {};
+    let config = editor.getConfig();
     let error = null;
     if (state !== undefined && state !== null) {
         state = DateTime.isDateTime(state) ? state : DateTime.fromISO(String(state));
@@ -84,7 +84,7 @@ export function validateDateTime(editor : StateEditor<Primitive>) : void {
             error = { code: ErrorCode.STATE_VALIDATION, message: 'must be a date/time' };
         }
     } else {
-        if (config.mandatory) {
+        if (config?.mandatory) {
             error = { code: ErrorCode.STATE_MANDATORY, message: 'field is mandatory' };
         }
     }
@@ -107,13 +107,13 @@ export function validate(editor: StateEditor<State>) {
             validateRecord(editor as StateEditor<Record>);
             break;
         case DataType.STRING: 
-            validateString(editor as StateEditor<Primitive>);
+            validateString(editor as StateEditor<NullablePrimitive>);
             break;
         case DataType.NUMBER: 
-            validateNumber(editor as StateEditor<Primitive>);
+            validateNumber(editor as StateEditor<NullablePrimitive>);
             break;
         case DataType.DATETIME: 
-            validateDateTime(editor as StateEditor<Primitive>);
+            validateDateTime(editor as StateEditor<NullablePrimitive>);
             break;
         case DataType.REFERENCE: 
             break;

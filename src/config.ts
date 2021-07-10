@@ -45,7 +45,7 @@ export class Guards {
     }    
 }
 
-export function getConfig(config : Config, ...key : Key) : Config {
+export function getConfig(config? : Config, ...key : Key) : Config | undefined {
     if (key.length > 0) {
         const [ head, ...tail ] = key;
         if (!config) {

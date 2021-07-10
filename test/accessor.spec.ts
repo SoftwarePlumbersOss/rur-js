@@ -17,10 +17,10 @@ describe('test simple accessor', ()=>{
     });
 
     it('can fetch config', () => {
-        expect(queueAccessor.getConfig().firestoreCollection).toBe('queues');
-        expect(queueAccessor.getConfig('a').type).toBe(DataType.FIELDSET);
-        expect(queueAccessor.getConfig('a','queueName').maxLength).toBe(32);
-        expect(queueAccessor.getConfig('a','items',0).recordset).toBe('requests');
+        expect(queueAccessor.getConfig()?.firestoreCollection).toBe('queues');
+        expect(queueAccessor.getConfig('a')?.type).toBe(DataType.FIELDSET);
+        expect(queueAccessor.getConfig('a','queueName')?.maxLength).toBe(32);
+        expect(queueAccessor.getConfig('a','items',0)?.recordset).toBe('requests');
     });
 
     it('can iterate over fields', ()=>{
@@ -60,7 +60,7 @@ describe('test accessor references', ()=>{
     });
 
     it('can fetch referenced config by index', ()=>{
-        expect(queueAccessor.getConfig('a','items',0,'user').type).toBe(DataType.REFERENCE);
+        expect(queueAccessor.getConfig('a','items',0,'user')?.type).toBe(DataType.REFERENCE);
     });    
 
     it('can iterate over fields in a reference', ()=>{
