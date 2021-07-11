@@ -95,5 +95,9 @@ export class Guards {
     static isIMetadataCarrier(state?: State): state is IMetadataCarrier & State{
         return Guards.isIRecord(state) || Guards.isIRecordset(state);
     }
+
+    static isFieldMapping(field: Field) : field is FieldMapping {
+        return !this.isNullablePrimitive(field) && !this.isRecordset(field);
+    }
 }
 
