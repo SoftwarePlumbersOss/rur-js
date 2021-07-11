@@ -169,8 +169,17 @@ class RecordsetEditor extends BaseStateEditor<Recordset> {
 
     private updateRowByKey(key: string, value: Record) {
         let recordset = this.state;
+        const replaceRowByKey = (row : Record) => (Guards.isIRecord(row) ? row.metadata?.key === key : row === key) ? value : row;
         if (Guards.isIRecordset(recordset)) {
-            this.state = { ...recordset, records: recordset.records.map((row, i) => (Guards.isIRecord(row) ? row.metadata?.key === key : row === key) ? value : row) }
+            let filter = recordset.filter;
+            if (filter && this.filterRow(value, expand(filter.criteria))) {
+                filter = { ...filter, records: filter.records.map(replaceRowByKey) } ;
+            }
+            this.state = { 
+                ...recordset, 
+                records: recordset.records.map(replaceRowByKey), 
+                filter
+            }
         } else {
             this.state = recordset.map((row, i) => (Guards.isIRecord(row) ? row.metadata?.key === key : row === key) ? value : row);
         }
@@ -178,8 +187,13 @@ class RecordsetEditor extends BaseStateEditor<Recordset> {
 
     private updateRowByIndex(index: number, value: Record) {
         let recordset = this.state;
+        const replaceRowByIndex = (row : Record, i : number) => i === index ? value : row;
         if (Guards.isIRecordset(recordset)) {
-            this.state = { ...recordset, records: recordset.records.map((row, i) => i === index ? value : row) }
+            let filter = recordset.filter;
+            if (filter && this.filterRow(value, expand(filter.criteria))) {
+                filter = { ...filter, records: filter.records.map(replaceRowByIndex) } ;
+            }            
+            this.state = { ...recordset, records: recordset.records.map(replaceRowByIndex) }
         } else {
             this.state = recordset.map((row, i) => i === index ? value : row);
         }
@@ -220,27 +234,116 @@ class RecordsetEditor extends BaseStateEditor<Recordset> {
         return this;
     }
 
-    insertRow(head: KeyPart, row: Record): RecordsetEditor {
+    private static insertBefore<T>(array: T[], item: T, selector: number | ((item : T, index?: number) => boolean)) : T[] {
+        let index = typeof selector === 'number' ? selector : array.findIndex(selector);
+        return [ ...array.slice(0,index), item, ...array.slice(index)];
+    }
+
+    insertRowByKey(head: KeyPart, row: Record): RecordsetEditor {
         let recordset = this.state;
+        let rowSelector = (row : Record) => Guards.isIRecord(row) ? row.metadata?.key === head : row === head
         if (Guards.isIRecordset(recordset)) {
-            let index: number = typeof head === 'number' ? head : recordset.records.findIndex(row => Guards.isIRecord(row) ? row.metadata?.key === head : row === head);
-            this.state = { ...recordset, records: [...recordset.records.slice(0, index), row, ...recordset.records.slice(index)] }
+            let filter = recordset.filter;
+            if (filter) {
+                filter = { ...filter, records: RecordsetEditor.insertBefore(filter.records, row, rowSelector) } ;
+            }
+            this.state = { ...recordset, filter, records: RecordsetEditor.insertBefore(recordset.records, row, rowSelector) };
         } else {
-            let index: number = typeof head === 'number' ? head : recordset.findIndex(row => Guards.isIRecord(row) ? row.metadata?.key === head : row === head);
-            this.state = [...recordset.slice(0, index), row, ...recordset.slice(index)]
+            this.state = RecordsetEditor.insertBefore(recordset, row, rowSelector);
         }
         return this;
     }
 
-    removeRow(head: KeyPart): RecordsetEditor {
+    insertRowByIndex(head: number, row: Record): RecordsetEditor {
         let recordset = this.state;
         if (Guards.isIRecordset(recordset)) {
-            let index: number = typeof head === 'number' ? head : recordset.records.findIndex(row => Guards.isIRecord(row) ? row.metadata?.key === head : row === head);
-            this.state = { ...recordset, records: [...recordset.records.slice(0, index), ...recordset.records.slice(index + 1)] }
+            let filter = recordset.filter;
+            let records = recordset.records;
+            if (filter) {
+                // if there's a filter, then index refers to the position in the filtered records
+                let recordBefore = filter.records[head];
+                // so find any key related to the index
+                let key = Guards.isIRecord(recordBefore) ? recordBefore.metadata?.key : undefined;
+                if (key) {
+                    // we have a key, so insert before that key in the main recordset
+                    let rowSelectorByKey = (row : Record) => Guards.isIRecord(row) ? row.metadata?.key === key : row === key;
+                    records = RecordsetEditor.insertBefore(records, row, rowSelectorByKey);
+                } else {
+                    // but fall back to just inserting at the end of the recordset.
+                    records = [ ...records, row ]
+                }
+                filter = { ...filter, records: RecordsetEditor.insertBefore(filter.records, row, head) };
+                this.state = { ...recordset, filter, records };
+            } else {
+                this.state = { ...recordset, records: RecordsetEditor.insertBefore(recordset.records, row, head) };
+            }
         } else {
-            let index: number = typeof head === 'number' ? head : recordset.findIndex(row => Guards.isIRecord(row) ? row.metadata?.key === head : row === head);
-            this.state = [...recordset.slice(0, index), ...recordset.slice(index + 1)]
+            this.state = RecordsetEditor.insertBefore(recordset, row, head);
         }
+        return this;
+    }    
+        
+    insertRow(head: KeyPart, row: Record): RecordsetEditor {
+        if (typeof head === 'number')
+            return this.insertRowByIndex(head, row);
+        else
+            return this.insertRowByKey(head, row);
+    }
+
+    private static removeAt<T>(array: T[], selector: number | ((item : T, index?: number) => boolean)) : T[] {
+        let index = typeof selector === 'number' ? selector : array.findIndex(selector);
+        return [ ...array.slice(0,index), ...array.slice(index+1)];
+    }
+
+    removeRowByKey(head: KeyPart): RecordsetEditor {
+        let recordset = this.state;
+        let rowSelector = (row : Record) => Guards.isIRecord(row) ? row.metadata?.key === head : row === head
+        if (Guards.isIRecordset(recordset)) {
+            let filter = recordset.filter;
+            if (filter) {
+                filter = { ...filter, records: RecordsetEditor.removeAt(filter.records,rowSelector) } ;
+            }
+            this.state = { ...recordset, filter, records: RecordsetEditor.removeAt(recordset.records,rowSelector) };
+        } else {
+            this.state = recordset.filter(rowSelector);
+        }
+        return this;
+    }
+
+    removeRowByIndex(head: number): RecordsetEditor {
+        let recordset = this.state;
+        if (Guards.isIRecordset(recordset)) {
+            let filter = recordset.filter;
+            let records = recordset.records;
+            if (filter) {
+                // if there's a filter, then index refers to the position in the filtered records
+                let record = filter.records[head];
+                // so find any key related to the index
+                let key = Guards.isIRecord(record) ? record.metadata?.key : undefined;
+                if (key) {
+                    // we have a key, so insert before that key in the main recordset
+                    let rowSelectorByKey = (row : Record) => Guards.isIRecord(row) ? row.metadata?.key !== key : row !== key;
+                    records = RecordsetEditor.removeAt(records, rowSelectorByKey);
+                } else {
+                    // really nothing we can do here
+                    throw new TypeError('must specify a key rather than an index when removing a record from a filtered recordset');
+                }
+                filter = { ...filter, records: RecordsetEditor.removeAt(records, head) };
+                this.state = { ...recordset, filter, records };
+            } else {
+                this.state = { ...recordset, records: RecordsetEditor.removeAt(records, head) };
+            }
+        } else {
+            this.state = RecordsetEditor.removeAt(recordset, head);
+        }
+        return this;
+    }    
+
+    removeRow(head: KeyPart): RecordsetEditor {
+        if (typeof head === 'number')
+            return this.removeRowByIndex(head);
+        else
+            return this.removeRowByKey(head);
         return this;
     }
 
