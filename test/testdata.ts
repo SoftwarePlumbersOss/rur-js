@@ -1,6 +1,6 @@
 import { DataType } from '../src/datatype';
 import { RecordsetConfig } from '../src/config';
-import { Recordset } from '../src/state';
+import { IRecordset } from '../src/state';
 
 export const configQueues : RecordsetConfig = {
     firestoreCollection: 'queues',
@@ -10,7 +10,7 @@ export const configQueues : RecordsetConfig = {
         fields: {
             queueName: { maxLength: 32 },
             items: { 
-                type: DataType.RECORDSET, 
+                type: DataType.ARRAY, 
                 value: {
                     type: DataType.REFERENCE,
                     recordset: 'requests'
@@ -39,122 +39,136 @@ export const configRequests: RecordsetConfig = {
     }
 }
 
-const requests : Recordset = [
-    { 
-        metadata: { key: 'a1'},
-        value: {
-            user: 'a1user',
-            song: 'a1song'
-        }
-    },{
-        metadata: { key: 'a2'},
-        value: {
-            user: 'a2user',
-            song: 'a2song'
-        }
+const requests : IRecordset = { 
+    metadata: {},
+    records: {
+        'a1' : { 
+            metadata: {},
+            value: {
+                user: 'a1user',
+                song: 'a1song'
+            }
+        },
+        'a2': {
+            metadata: { },
+            value: {
+                user: 'a2user',
+                song: 'a2song'
+            }
 
-    },{ 
-        metadata: { key: 'b1'},
-        value: {
-            user: 'b1user',
-            song: 'b1song'
-        }
-    },{
-        metadata: { key: 'b2'},
-        value: {
-            user: 'b2user',
-            song: 'b2song'
-        }
+        },
+        'b1' : { 
+            metadata: { },
+            value: {
+                user: 'b1user',
+                song: 'b1song'
+            }
+        },
+        'b2': {
+            metadata: { },
+            value: {
+                user: 'b2user',
+                song: 'b2song'
+            }
 
-    }
-]
-
-const users : Recordset = [
-    {
-        metadata: { key: 'a1user' },
-        value: {
-            firstName: 'jonathan',
-            lastName: 'essex'
-        }
-    },{
-        metadata: { key: 'a2user' },
-        value: {
-            firstName: 'commander',
-            lastName: 'keene'
-        }
-    },{
-        metadata: { key: 'b1user' },
-        value: {
-            firstName: 'simon',
-            lastName: 'templar'
-        }
-    },{
-        metadata: { key: 'b2user' },
-        value: {
-            firstName: 'testy',
-            lastName: 'mctester'
         }
     }
-]
+}
 
-const songs : Recordset = [
-    {
-        metadata: { key: 'a1song' },
-        value: {
-            title: 'song1',
-            artist: 'artist1'
-        }
-    },{
-        metadata: { key: 'a2song' },
-        value: {
-            title: 'song2',
-            artist: 'artist2'
-        }
-    },{
-        metadata: { key: 'b1song' },
-        value: {
-            title: 'song3',
-            artist: 'artist3'
-        }
-    },{
-        metadata: { key: 'b2song' },
-        value: {
-            title: 'song4',
-            artist: 'artist4'
+const users : IRecordset = {
+    metadata: {},
+    records: {
+        'a1user' : {
+            metadata: {  },
+            value: {
+                firstName: 'jonathan',
+                lastName: 'essex'
+            }
+        },
+        'a2user' : {
+            metadata: {  },
+            value: {
+                firstName: 'commander',
+                lastName: 'keene'
+            }
+        },
+        'b1user' : {
+            metadata: {  },
+            value: {
+                firstName: 'simon',
+                lastName: 'templar'
+            }
+        },
+        'b2user': {
+            metadata: {  },
+            value: {
+                firstName: 'testy',
+                lastName: 'mctester'
+            }
         }
     }
-]
+}
 
-const queues : Recordset = [
-    {
-        metadata: { key: 'a' },
-        value: {
-            queueName: 'a',
-            otherItems: [ 'one', 'three'],
-            items: ['a1','a2']
-        }
-    },{
-        metadata: { key: 'b' },
-        value: {
-            queueName: 'b',
-            items: ['b1', 'b2']
+const songs : IRecordset = {
+    metadata: {},
+    records: {
+        a1song: {
+            metadata: {  },
+            value: {
+                title: 'song1',
+                artist: 'artist1'
+            }
+        },
+        a2song: {
+            metadata: {  },
+            value: {
+                title: 'song2',
+                artist: 'artist2'
+            }
+        },
+        b1song: {
+            metadata: {  },
+            value: {
+                title: 'song3',
+                artist: 'artist3'
+            }
+        },
+        b2song: {
+            metadata: {  },
+            value: {
+                title: 'song4',
+                artist: 'artist4'
+            }
         }
     }
-]
+}
+
+const queues : IRecordset = {
+    metadata: { },
+    records: {
+        'a': {
+            metadata: { metaOne: 1 },
+            value: {
+                queueName: 'a',
+                otherItems: [ 'one', 'three'],
+                items: ['a1','a2']
+            }
+        },
+        'b': {
+            metadata: { metaOne: 2 },
+            value: {
+                queueName: 'b',
+                items: ['b1', 'b2']
+            }
+        }
+    }
+}
 
 export const state = {
     recordset: {
-        queues: {
-            records: queues,
-        },
-        users: {
-            records: users,
-        },
-        songs: {
-            records: songs,
-        },
-        requests: {
-            records: requests,
-        }
+        queues,
+        users,
+        songs,
+        requests
     }
 }

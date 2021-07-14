@@ -1,4 +1,4 @@
-import { Accessor, BaseAccessor } from '../src/accessor';
+import { Accessor, BaseAccessor, View } from '../src/accessor';
 import { DataType } from '../src/datatype';
 import { configQueues, configRequests, state } from './testdata';
 import getRegistry from '../src/registry';
@@ -6,10 +6,6 @@ import getRegistry from '../src/registry';
 const queueAccessor : Accessor = new BaseAccessor(configQueues, ['recordset', 'queues']);
 
 describe('test simple accessor', ()=>{
-    it('can fetch a simple field by index', ()=>{
-        expect(queueAccessor.get(state, 0, 'queueName')).toBe('a');
-        expect(queueAccessor.get(state, 1, 'queueName')).toBe('b');
-    });
 
     it('can fetch a simple field by key', ()=>{
         expect(queueAccessor.get(state, 'a', 'queueName')).toBe('a');
@@ -24,10 +20,10 @@ describe('test simple accessor', ()=>{
     });
 
     it('can iterate over fields', ()=>{
-        const result = [...queueAccessor.get(state) as Iterable<any>] 
+        const result = [...Accessor.keys(queueAccessor.get(state))];
         expect(result).toHaveLength(2);
-        expect(result[0].get('queueName')).toBe('a');
-        expect(result[1].get('queueName')).toBe('b');
+        expect(queueAccessor.get(state, result[0], 'queueName')).toBe('a');
+        expect(queueAccessor.get(state, result[1], 'queueName')).toBe('b');
     });
     
     it('can fetch an array item by index', ()=>{
@@ -35,9 +31,9 @@ describe('test simple accessor', ()=>{
         expect(queueAccessor.get(state,'a','otherItems',1)).toBe('three');
     }); 
 
-    it('can fetch an item metadata by index', ()=>{
-        expect(queueAccessor.getMetadata(state,0,'key')).toBe('a');
-        expect(queueAccessor.getMetadata(state,1,'key')).toBe('b');
+    it('can fetch an item metadata by key', ()=>{
+        expect(queueAccessor.getMetadata(state,'a','metaOne')).toBe(1);
+        expect(queueAccessor.getMetadata(state,'b','metaOne')).toBe(2);
     }); 
 
 });
@@ -64,10 +60,11 @@ describe('test accessor references', ()=>{
     });    
 
     it('can iterate over fields in a reference', ()=>{
-        const result = [...requestAccessor.get(state) as Iterable<any>] 
+        const view = requestAccessor.get(state) as View;
+        const result = [...Accessor.keys(view)] 
         expect(result).toHaveLength(4);
-        expect(result[0].get('user','firstName')).toBe('jonathan');
-        expect(result[1].get('user','firstName')).toBe('commander');
+        expect(view.get(result[0],'user','firstName')).toBe('jonathan');
+        expect(view.get(result[1],'user','firstName')).toBe('commander');
     });
 
     it('can fetch a referenced field by name', ()=>{

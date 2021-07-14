@@ -1,4 +1,4 @@
-import { FieldMapping, State, Recordset, Record, NullablePrimitive } from './state';
+import { FieldMapping, FieldArray, State, IRecordset, Record, NullablePrimitive } from './state';
 import { DataType } from './datatype';
 import { StateEditor } from './editor';
 import { DateTime } from 'luxon';
@@ -21,7 +21,10 @@ export function validateFieldset(editor : StateEditor<FieldMapping>) : void {
     }
 }
 
-export function validateRecordset(editor : StateEditor<Recordset>) : void {
+export function validateArray(editor : StateEditor<FieldArray>) : void {
+}
+
+export function validateRecordset(editor : StateEditor<IRecordset>) : void {
 }
 
 export function validateRecord(editor : StateEditor<Record>) : void {
@@ -48,7 +51,7 @@ export function validateString(editor : StateEditor<NullablePrimitive>) : void {
         }
     }
     if (!error) {
-        editor.mergeState(state);
+        editor.merge(state);
     }
     editor.mergeMetadata({ metadata: { error }})
 }
@@ -70,7 +73,7 @@ export function validateNumber(editor : StateEditor<NullablePrimitive>) : void {
     if (error) {
         editor.mergeMetadata({ metadata: { error }})
     } else {
-        editor.mergeState(state);
+        editor.merge(state);
     }    
 }
 
@@ -91,7 +94,7 @@ export function validateDateTime(editor : StateEditor<NullablePrimitive>) : void
     if (error) {
         editor.mergeMetadata({ metadata: { error }})
     } else {
-        editor.mergeState(state);
+        editor.merge(state);
     }    
 }
 
@@ -101,7 +104,7 @@ export function validate(editor: StateEditor<State>) {
             validateFieldset(editor as StateEditor<FieldMapping>);
             break;
         case DataType.RECORDSET: 
-            validateRecordset(editor as StateEditor<Recordset>);
+            validateRecordset(editor as StateEditor<IRecordset>);
             break;
         case DataType.RECORD: 
             validateRecord(editor as StateEditor<Record>);
@@ -111,6 +114,9 @@ export function validate(editor: StateEditor<State>) {
             break;
         case DataType.NUMBER: 
             validateNumber(editor as StateEditor<NullablePrimitive>);
+            break;
+        case DataType.ARRAY: 
+            validateArray(editor as StateEditor<FieldArray>);
             break;
         case DataType.DATETIME: 
             validateDateTime(editor as StateEditor<NullablePrimitive>);

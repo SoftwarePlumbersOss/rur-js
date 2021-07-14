@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import { PackedCriteria } from './criteria';
+import { Sort } from './sort'
 import { Exception } from './exceptions';
 
 export  type Primitive = string | number | DateTime;
@@ -13,17 +14,22 @@ export interface IMetadata {
     metadata: Metadata
 }
 export interface IMetadataCarrier extends IMetadata {
-    childMetadata? : { [childName: string]: IMetadataCarrier }    
+    childMetadata? : { [childName: string]: IMetadataCarrier }
+    memberMetadata? : [ IMetadataCarrier ] 
 }
 
 export type ChildMetadata = IMetadataCarrier["childMetadata"]
 
 
 export interface FieldMapping { 
-    [ fieldName: string ] : NullablePrimitive | Recordset | FieldMapping
+    [ fieldName: string ] : NullablePrimitive | IRecordset | FieldMapping | (Primitive | FieldMapping)[]
 }
 
 export type Field = FieldMapping[string];
+
+export type FieldArrayContent = Primitive | FieldMapping;
+
+export type FieldArray = FieldArrayContent[]
 
 export interface IRecord extends IMetadataCarrier {
     value: Field
@@ -32,19 +38,16 @@ export interface IRecord extends IMetadataCarrier {
 export type Record = IRecord | Primitive
 
 export interface Filter {
-    records: Record[],
-    criteria: PackedCriteria
-
+    keys: string[],
+    criteria?: PackedCriteria,
+    sort?: Sort
 }
-
 export interface IRecordset extends IMetadataCarrier {
-    records: Record[],
+    records: { [ key: string ] : Record },
     filter?: Filter
 }
 
-export type Recordset = IRecordset | Record[]
-
-export type State = Field | Record
+export type State = Field | Record 
 
 export class Guards {
 
@@ -88,16 +91,12 @@ export class Guards {
         return (state as IRecordset)?.records !== undefined;
     }
 
-    static isRecordset(state?: State): state is Recordset {
-        return Guards.isIRecordset(state) || Array.isArray(state);
-    }
-
     static isIMetadataCarrier(state?: State): state is IMetadataCarrier & State{
         return Guards.isIRecord(state) || Guards.isIRecordset(state);
     }
 
     static isFieldMapping(field: Field) : field is FieldMapping {
-        return !this.isNullablePrimitive(field) && !this.isRecordset(field);
+        return !this.isNullablePrimitive(field) && !this.isIRecordset(field) && !Array.isArray(field);
     }
 }
 

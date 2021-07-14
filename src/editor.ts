@@ -1,31 +1,158 @@
-import { State, NullablePrimitive, Record, Recordset, IRecordset, Guards, FieldMapping, Field, IMetadataCarrier, ChildMetadata, Metadata, MetadataPrimitive } from './state';
+import { State, NullablePrimitive, Primitive, FieldArray, FieldArrayContent, Record, IRecord, IRecordset, Guards, FieldMapping, Field, IMetadataCarrier, ChildMetadata, Metadata, MetadataPrimitive, Filter as View } from './state';
 import { Key, KeyPart } from './types';
 import { DataType, getDataType } from './datatype';
 import { Config, getConfig } from './config';
 import { ReferenceBoundary } from './exceptions';
-import { pickBy, mapValues } from 'lodash';
+import { pickBy, mapValues, slice, filter, max } from 'lodash';
 import { PackedCriteria, Filter, Guards as CriteriaGuards, expand, apply } from './criteria';
+import { Sort, apply as applySort } from './sort'
 
 
 export abstract class StateEditor<T extends State> {
 
-    abstract getChild<U extends State>(head: KeyPart): U | undefined;
-    abstract setChild<U extends State>(head: KeyPart, child: U): void;
+    /** Get a direct child of this state element,
+     * 
+     * @param head 
+     */
+    abstract getChild(head: KeyPart): State;
 
-    abstract set(path: Key, value: NullablePrimitive): this
-    abstract get(path: Key): NullablePrimitive | undefined
-    abstract getType(): DataType;
-    abstract getEditor(head: KeyPart): StateEditor<State>;
-    abstract getState(): T;
-    abstract getMetadata(): IMetadataCarrier;
-    abstract getConfig(): Config | undefined;
-    abstract mergeMetadata(metadata: IMetadataCarrier, mergeForward?: boolean): this;
-    abstract mergeState(state: T): this;
+    /** Get metadata for a direct child of this state element,
+     * 
+     * @param head 
+     */
+     abstract getChildMetadata(head: KeyPart): IMetadataCarrier | undefined;    
 
-    getChildMetadata(head: KeyPart): IMetadataCarrier | undefined {
-        return this.getMetadata()?.childMetadata?.[head]
+    /** Insert a new child
+     * 
+     * * For arrays, this inserts a child *at* the specified position, 
+     *   moving subsequent children backward
+     * * For recordsets and fieldset, inserts a new child with the specified key. 
+     *   An error will be thrown if the key already exisits
+     * * For primitives, throws an error.
+     * 
+     */
+    abstract insertChild(head: KeyPart, child: State): this;
+
+    /** Upsert a child
+     * 
+     * * For arrays, this updates the child *at* the specified position
+     * * For recordsets and fieldset, updates the child with the specified key 
+     *   or inserts a new child with the specified key
+     * * For primitives, throws an error.
+     * 
+     */
+     abstract setChild(head: KeyPart, child: State): this;    
+
+    /** Delete a child
+     * 
+     * * For arrays, this deletes the child *at* the specified position, 
+     *   moving subsequent children backward
+     * * For recordsets and fieldsets, deletes child with the specified key. 
+     *   An error will be thrown if the key does not exist
+     * * For primitives, throws an error.
+     * 
+     */
+     abstract deleteChild(head: KeyPart): this;
+
+
+     abstract merge(state: T): this;
+     abstract mergeMetadata(metadata: IMetadataCarrier): this;
+     abstract replaceMetadata(metadata: IMetadataCarrier): this; 
+ 
+     /** Get an editor for a child.
+      * 
+      * Editors provide a mutable facade to the immutable state objects.
+      * They also provide a temporary place to store metadata when traversing the
+      * tree, since metadata for a node may not always be stored at that node,
+      * but in some higher node in the tree.
+      * 
+      */
+     getEditor(head: KeyPart): StateEditor<State> {
+        const childState = this.getChild(head);
+        const childConfig = getConfig(this.getConfig(), head);
+        const childMetadata = this.getChildMetadata(head);
+        return edit(childConfig, childState, childMetadata);
     }
 
+     /** Get the immutable state from this editor.  
+      * 
+      */
+     abstract getState(): T;
+
+     /** Get metadata from this editor.
+      *
+      * Gets any metadata logically related to the node, but not incorporated into
+      * the State object. An example would be for a Primitive, which can't store
+      * metadata for itself. The metadata for a primtive will typically be stored
+      * in the enclosing form or record.
+      */
+    abstract getMetadata(): IMetadataCarrier;
+
+    /** Get the configuration for this node
+     * 
+     * Configuration may be useful in determining the type of state represented by this
+     * editor and its children.
+     */
+    abstract getConfig(): Config | undefined;
+     
+    /** Sets a value somewhere in the state tree.
+     * 
+     * equivalent to editAt(path.slice(0,-1), editor=>editor.setChild(path.slice(-1).pop(), value))
+     * 
+     * @param path 
+     * @param value 
+     */
+    set(path: Key, value: State): this {
+        if (path.length > 0)
+            this.editAt(path.slice(0,-1), editor=>editor.setChild(path[path.length - 1], value))
+        else
+            throw new RangeError('key must have at least one element in it');
+        return this;
+    }
+
+    /** Gets a value from somewhere in the state tree.
+     * 
+     * equivalent to find(path).getState()
+     * 
+     * @param path 
+     * @param value 
+     */    
+    get(path: Key): State | undefined {
+        return this.find(path)?.getState() as Field || undefined;
+    }
+
+    /** Get an editor for somewhere in the state tree.
+     * 
+     * Recursively invokes getEditor(KeyPart) to get a specific editor.  
+     * 
+     */
+    find(path : Key) : StateEditor<State> | undefined {
+        if (path.length === 0) return this;
+        const [head, ...tail] = path;
+        return this.getEditor(head).find(tail);
+    }
+
+    /** Convenience method equivalent to getDataType(this.getState(), this.getConfig()) 
+     * 
+     */
+    getType() {
+        return getDataType(this.getState(), this.getConfig())
+    }
+
+    /** Convenience method which returns a merge of this.getMetadata() with this.getState() 
+     * 
+     */
+    getAllMetadata() {
+        const state = this.getState();
+        return (Guards.isIMetadataCarrier(state)) ? state : this.getMetadata();
+    }
+
+    /** Edit state data/metadata at some path in the tree.
+     * 
+     * @param path 
+     * @param editOperation 
+     * @returns 
+     */
     editAt(path: Key, editOperation: (editor: StateEditor<State>) => void): this {
         if (path.length > 0) {
             const [head, ...tail] = path;
@@ -34,14 +161,19 @@ export abstract class StateEditor<T extends State> {
             this.setChild(head, childEditor.getState())
             let childMetadata = childEditor.getMetadata();
             if (childMetadata && !isEmpty(childMetadata)) {
-                this.mergeMetadata({ metadata: {}, childMetadata: { [head]: childMetadata } }, false);
+                this.replaceMetadata(
+                    prune(mergeIMetadataCarrier(
+                        this.getAllMetadata(),
+                        { metadata: {}, childMetadata: { [head]: childMetadata } }
+                    ))
+                );
             }
         } else {
             editOperation(this);
         }
         return this;
     }
-
+    
     setMetadata(key: Key, value: MetadataPrimitive): this {
         if (key.length > 0) {
             let metadata = { metadata: { [key[key.length - 1]]: value } };
@@ -56,8 +188,7 @@ export abstract class StateEditor<T extends State> {
     }
 
     getMetadataAt(key: Key): MetadataPrimitive {
-        return key.slice(0, -1).reduce((editor: StateEditor<State>, key) => editor.getEditor(key), this)
-            .getMetadata()?.metadata?.[key[key.length - 1]];
+        return this.find(key.slice(0,-1))?.getAllMetadata().metadata?.[key[key.length-1]];
     }
 
     searchAt(key: Key, criteria: PackedCriteria): this {
@@ -67,38 +198,45 @@ export abstract class StateEditor<T extends State> {
             else
                 throw new TypeError(`${key} does not refer to a recordset`);
         })
-    }    
-    insertRecordAt(key: Key, value: Record): this {
+    }  
+
+    sortAt(key: Key, sort : Sort): this {
+        return this.editAt(key, editor => {
+            if (editor instanceof RecordsetEditor)
+                editor.sort(sort);
+            else
+                throw new TypeError(`${key} does not refer to a recordset`);
+        })
+    }  
+    
+    insertAt(key: Key, value: State): this {
+        if (value === null) throw new TypeError('cannot insert a null field');
         if (key.length > 0) {
             let recordsetKey = key.slice(0, -1);
             return this.editAt(recordsetKey, editor => {
-                if (editor instanceof RecordsetEditor)
-                    editor.insertRow(key[key.length - 1], value);
-                else
-                    throw new TypeError(`${recordsetKey} does not refer to a recordset`);
+                editor.insertChild(key[key.length - 1], value);
             })
         } else {
             throw new RangeError('key should have a length of at least 1');
         }
     }
 
-    addRecordAt(key: Key, value: Record): this {
+    addAt(key: Key, value: State): this {
+        if (value === null) throw new TypeError('cannot insert a null field');
         return this.editAt(key, editor => {
-            if (editor instanceof RecordsetEditor)
-                editor.addRow(value);
-            else
-                throw new TypeError(`${key} does not refer to a recordset`);
+            if (editor instanceof FieldArrayEditor) {
+                editor.addChild(value);
+            } else {
+                throw new TypeError('attempted to invoke array add on a non-array');
+            }
         })
     }
 
-    removeRecord(key: Key): this {
+    deleteAt(key: Key): this {
         if (key.length > 0) {
             let recordsetKey = key.slice(0, -1);
             return this.editAt(recordsetKey, editor => {
-                if (editor instanceof RecordsetEditor)
-                    editor.removeRow(key[key.length - 1]);
-                else
-                    throw new TypeError(`${recordsetKey} does not refer to a recordset`);
+                    editor.deleteChild(key[key.length - 1]);
             })
         } else {
             throw new RangeError('key should have a length of at least 1');
@@ -117,46 +255,8 @@ abstract class BaseStateEditor<T extends State> extends StateEditor<T> {
         this.state = state;
     }
 
-
-    set(path: Key, value: NullablePrimitive): this {
-        if (path.length > 0) {
-            const [head, ...tail] = path;
-            this.setChild(head, this.getEditor(head).set(tail, value).getState());
-        } else {
-            this.state = value as T;
-        }
-        return this;
-    }
-
-    get(path: Key): NullablePrimitive | undefined {
-        if (path.length > 0) {
-            const [head, ...tail] = path;
-            return this.getEditor(head).get(tail);
-        } else {
-            return this.state as NullablePrimitive;
-        }
-    }
-
-    getType(): DataType {
-        return getDataType(this.state, this.config);
-    }
-
-    getEditor(head: KeyPart): StateEditor<State> {
-        const childState = this.getChild(head);
-        const childConfig = getConfig(this.config, head);
-        const childMetadata = this.getChildMetadata(head);
-        return edit(childConfig, childState, childMetadata);
-    }
-
     getState(): T {
         return this.state;
-    }
-
-    getMetadata(): IMetadataCarrier {
-        if (Guards.isIMetadataCarrier(this.state))
-            return this.state;
-        else
-            return { metadata: {} };
     }
 
     getConfig(): Config | undefined {
@@ -165,195 +265,294 @@ abstract class BaseStateEditor<T extends State> extends StateEditor<T> {
 
 }
 
-class RecordsetEditor extends BaseStateEditor<Recordset> {
+class FieldArrayEditor extends BaseStateEditor<FieldArray> {
 
-    private updateRowByKey(key: string, value: Record) {
-        let recordset = this.state;
-        const replaceRowByKey = (row : Record) => (Guards.isIRecord(row) ? row.metadata?.key === key : row === key) ? value : row;
-        if (Guards.isIRecordset(recordset)) {
-            let filter = recordset.filter;
-            if (filter && this.filterRow(value, expand(filter.criteria))) {
-                filter = { ...filter, records: filter.records.map(replaceRowByKey) } ;
+    metadata: IMetadataCarrier;
+
+    constructor(config : Config | undefined, state : FieldArray, metadata?: IMetadataCarrier) {
+        super(config, state);
+        this.metadata = metadata || { metadata: {} } ;
+    }
+
+    getChild(head: KeyPart): State {
+        return this.state[head as number];
+    }
+
+    getChildMetadata(head: KeyPart): IMetadataCarrier | undefined {
+        return this.metadata?.memberMetadata?.[head as number];
+    }
+
+    getMetadata(): IMetadataCarrier {
+        return this.metadata;
+    }
+
+    replaceMetadata(metadata: IMetadataCarrier): this {
+        this.metadata = metadata;
+        return this;
+    }
+    
+    insertChild(head: KeyPart, child: State): this {
+        const index = head as number;
+        this.state = [ ...this.state.slice(0,index), child as FieldArrayContent, ...this.state.slice(index) ];
+        return this;
+    }
+ 
+    addChild(child: State) : this {
+        this.state = [ ...this.state, child as FieldArrayContent ];
+        return this;
+    }
+
+    setChild(head: KeyPart, child: State): this {
+        const index = head as number;
+        this.state = [ ...this.state.slice(0,index), child as FieldArrayContent, ...this.state.slice(index+1) ];
+        return this;
+    }
+ 
+    deleteChild(head: KeyPart): this {
+        const index = head as number;
+        this.state = [ ...this.state.slice(0,index), ...this.state.slice(index+1) ];
+        return this;
+    }
+
+    mergeMetadata(metadata: IMetadataCarrier): this {
+        let sourceMemberMetadata = metadata.memberMetadata;
+        if (sourceMemberMetadata) {
+            // this isn't quite the null operation it seems to be. Often just results
+            // in the child metadata being merged back to this editor. However if a descendent
+            // is actually an IMetadataCarrier, that metadata will stick to the descendent rather
+            // than being merged back here
+            for (let i = 0; i < sourceMemberMetadata.length; i++) {
+                const child = sourceMemberMetadata[i];
+                this.editAt([i], editor => editor.mergeMetadata(child))
             }
-            this.state = { 
-                ...recordset, 
-                records: recordset.records.map(replaceRowByKey), 
-                filter
+            // now merge any non-child metadata
+            this.metadata = mergeIMetadataCarrier(this.metadata, { metadata: metadata.metadata });
+        } else {
+            // there's no child metadata supplied, so just merge without any fuss
+            this.metadata = mergeIMetadataCarrier(this.metadata, metadata);
+        }
+        return this;
+    }
+
+    mergeElements(a: FieldArray, b: FieldArray) : FieldArray {        
+        const length = Math.max(a.length, b.length);
+        let result : FieldArray = [];
+        for (let i = 0; i < length; i++) {
+            if (a[i] != null && b[i] != null) 
+                result.push(edit(this.config?.value, a[i]).merge(b[i]).getState())
+            else if (b[i] === undefined && a[i] != null) // the === is deliberate so that if b[i] === null nothing gets pushed
+                result.push(a[i]);
+            else if (a[i] == null && b[i] != null) 
+                result.push(b[i]);
+        }        
+        return result;
+    }
+
+    merge(array: FieldArray): this {
+        const length = Math.max(this.state.length, array.length);
+        let result : FieldArray = [];
+        for (let i = 0; i < length; i++) {
+            if (this.state[i] != null && array[i] != null) {
+                let editor = edit(this.config?.value, this.state[i]).merge(array[i]);
+                result.push(editor.getState());
+            }
+            else if (this.state[i] === undefined && array[i] != null) // the === is deliberate so that if b[i] === null nothing gets pushed
+                result.push(this.state[i]);
+            else if (this.state[i] == null && array[i] != null) 
+                result.push(array[i]);
+        }        
+        this.state = result;
+        return this;
+    }
+}
+
+class ViewEditor {
+
+    private expandedCriteria? : Filter;
+    private config? : Config;
+    private state : View;
+    private allRecords : { [ key: string ] : Record };
+
+    constructor(config : Config | undefined, state: View, allRecords: { [ key: string ] : Record }) {
+        this.state = state;
+        this.config = config;
+        this.allRecords = allRecords;
+        this.expandedCriteria = state.criteria && expand(state.criteria);
+    }
+
+    private filterRow(record: Record) : boolean {
+        if (this.expandedCriteria !== undefined) {
+            if (Guards.isIRecord(record)) {
+                return apply(record.value, this.expandedCriteria, this.config?.value);
+            } else {
+                return apply(record, this.expandedCriteria, this.config?.value);
             }
         } else {
-            this.state = recordset.map((row, i) => (Guards.isIRecord(row) ? row.metadata?.key === key : row === key) ? value : row);
+            return true;
         }
     }
 
-    private updateRowByIndex(index: number, value: Record) {
+    private compareRows(a: Record, b: Record) : number {
+        if (this.state.sort) {
+            let fieldA =  Guards.isIRecord(a) ? a.value : a;
+            let fieldB = Guards.isIRecord(b) ? b.value : b;
+            return applySort(fieldA, fieldB, this.state.sort, this.config?.value);
+        } else {
+            return 0;
+        }
+    }
+
+    updateRow(key: string, value: Record /* record must already be merged with any existing data*/) : ViewEditor {
+        if (!this.state.criteria || this.filterRow(value)) {
+            let keys = this.state.keys;
+            let index = keys.indexOf(key);
+            if (index >= 0) {
+                if (this.state.sort) {
+                    /** Argh, the position of the row in the sort may have changed. So find the new position */
+                    let insertIndex = keys.findIndex(key => this.compareRows(this.allRecords[key], value) > 0);
+                    const delta = insertIndex < index ? 1 : -1; // This determines which way records shift in the order
+                    keys = keys.map((k, i) => {
+                        if (i === insertIndex) return key; // insert the record at its new positon
+                        if (i < insertIndex && i < index || i > insertIndex && i > index) return k; // copy unaffected records
+                        return keys[i + delta] // shift any records we need to shift
+                    });
+                } else {
+                    // No sort, so just update the record
+                    keys = keys.map((k, i) => i === index ? key : k);
+                }
+            } else {
+                throw new RangeError('index out of range');
+            }
+            this.state = { ...this.state, keys };
+        } else {
+            // Do nothing, there is a criteria and the row does not match it
+        }
+        return this;
+    }
+
+    insertRow(key: string, value: Record /* record must already be merged with any existing data*/) : ViewEditor {
+        if (!this.state.criteria || this.filterRow(value)) {
+            let keys = this.state.keys;
+            if (this.state.sort) {
+                let index = keys.findIndex(key => this.compareRows(this.allRecords[key], value) > 0);
+                this.state = { ...this.state, keys: [ ...keys.slice(0, index), key, ...keys.slice(index) ] };
+            } else {
+                this.state = { ...this.state, keys: [ ...keys, key ]}
+            }
+        } else {
+            // Do nothing, there is a criteria and the row does not match it
+        }
+        return this;
+    }    
+
+    setRow(key: string, value: Record /* record must already be merged with any existing data*/) : ViewEditor {
+        if (!this.state.criteria || this.filterRow(value)) {
+            let keys = this.state.keys;
+            if (keys.indexOf(key) >= 0) {
+                this.updateRow(key, value);
+            } else {
+                this.insertRow(key, value);
+            }
+        } else {
+            // Do nothing, there is a criteria and the row does not match it
+        }
+        return this;
+    }       
+
+    removeRow(key: string) : ViewEditor {
+        let index = this.state.keys.indexOf(key);
+        if (index >= 0)
+            this.state = { ...this.state, keys: [ ...this.state.keys.slice(0, index), ...this.state.keys.slice(index + 1) ] };
+        return this;
+    } 
+
+    sort(sort: Sort) : ViewEditor {
+        this.state = { ...this.state, sort };
+        this.state = { ...this.state,  keys: this.state.keys.sort((a,b) => this.compareRows(this.allRecords[a],this.allRecords[b])) } 
+        return this;
+    }
+
+    search(criteria: PackedCriteria) : ViewEditor {
+        this.expandedCriteria = expand(criteria);
+        this.state = { ...this.state, criteria, keys: this.state.keys.filter(key => this.filterRow(this.allRecords[key])) };
+        return this;
+    }
+
+    setData(records : { [key: string] : Record}) {
+        this.allRecords = records;
+        let keys = Object.keys(records);
+        if (this.expandedCriteria) keys = keys.filter(key => this.filterRow(records[key]));
+        if (this.state.sort) keys = keys.sort((a,b)=>this.compareRows(records[a],records[b]));
+        this.state = { ...this.state, keys };
+    }
+
+    getState() : View {
+        return this.state;
+    }
+}
+
+class RecordsetEditor extends BaseStateEditor<IRecordset> {
+
+    private getViewEditor(view? : View) : ViewEditor {
+        return new ViewEditor(
+            getConfig(this.config, "value"), 
+            this.state.filter || { keys: Object.keys(this.state.records) },
+            this.state.records
+        );
+    }
+
+    insertChild(head: KeyPart, record: Record): this {
+        const key = head as string;
+        if (this.state.records[key] !== undefined) throw new RangeError('attempt to insert with key that exists');
+        return this.setChild(key, record);
+    }
+
+    setChild(head: KeyPart, record: Record): this {
         let recordset = this.state;
-        const replaceRowByIndex = (row : Record, i : number) => i === index ? value : row;
-        if (Guards.isIRecordset(recordset)) {
-            let filter = recordset.filter;
-            if (filter && this.filterRow(value, expand(filter.criteria))) {
-                filter = { ...filter, records: filter.records.map(replaceRowByIndex) } ;
-            }            
-            this.state = { ...recordset, records: recordset.records.map(replaceRowByIndex) }
-        } else {
-            this.state = recordset.map((row, i) => i === index ? value : row);
+        let view = recordset.filter;
+        const key = head as string;
+        if (view) {
+            const editor = this.getViewEditor(view);
+            view = editor.setRow(key, record).getState();
         }
-        return recordset;
-    }
-
-    private filterRow(record: Record, criteria: Filter) : boolean {
-        if (Guards.isIRecord(record)) {
-            return apply(record.value, criteria, this.config?.value);
-        } else {
-            return apply(record, criteria, this.config?.value);
+        this.state = {
+            ...recordset,
+            records: { ...recordset.records, [key]: record },
+            filter: view
         }
+        return this;
+    }    
+
+    deleteChild(head: KeyPart): this {
+        let view = this.state.filter;
+        if (view) {
+            const viewEditor = this.getViewEditor(view);
+            view = viewEditor.removeRow(head as string).getState();
+        }
+        let { [head] : _drop, ...records } = this.state.records;
+        this.state = {
+            ...this.state,
+            filter: view,
+            records
+        };
+        return this;
     }
 
-    private updateRow(head: string | number, value: Record) {
-        if (typeof head === 'number')
-            this.updateRowByIndex(head, value)
-        else
-            this.updateRowByKey(head, value)
+    getChild(key: KeyPart): Record {
+        return this.state.records[key as string];
     }
 
-    setChild<Record>(head: KeyPart, record: Record): void {
-        this.updateRow(head, record as any); // What the fucking fuck was the problem here       
-    }
-
-    getChild<Record>(head: KeyPart): Record {
-        let records = Guards.isIRecordset(this.state) ? this.state.records : this.state;
-        let index = (typeof head === 'number') ? head : records.findIndex(record => Guards.isIRecord(record) ? record.metadata?.key === head : record === head)
-        return records[index] as any; // What the fucking fuck was the problem here
+    getChildMetadata(head: KeyPart): IMetadataCarrier | undefined {
+        return this.state.childMetadata?.[head as string];
     }
 
     search(criteria: PackedCriteria) : RecordsetEditor {
-        if (Guards.isIRecordset(this.state)) {
-            this.state = { ...this.state, filter: { criteria, records: this.state.records.filter(record => this.filterRow(record, expand(criteria))) } }
-        } else {
-            this.state = { records: this.state, metadata: {}, filter: { criteria, records: this.state.filter(record => this.filterRow(record, expand(criteria))) } }
-        }
+        this.state = { ...this.state, filter: this.getViewEditor(this.state.filter).search(criteria).getState() } 
         return this;
     }
 
-    private static insertBefore<T>(array: T[], item: T, selector: number | ((item : T, index?: number) => boolean)) : T[] {
-        let index = typeof selector === 'number' ? selector : array.findIndex(selector);
-        return [ ...array.slice(0,index), item, ...array.slice(index)];
-    }
-
-    insertRowByKey(head: KeyPart, row: Record): RecordsetEditor {
-        let recordset = this.state;
-        let rowSelector = (row : Record) => Guards.isIRecord(row) ? row.metadata?.key === head : row === head
-        if (Guards.isIRecordset(recordset)) {
-            let filter = recordset.filter;
-            if (filter) {
-                filter = { ...filter, records: RecordsetEditor.insertBefore(filter.records, row, rowSelector) } ;
-            }
-            this.state = { ...recordset, filter, records: RecordsetEditor.insertBefore(recordset.records, row, rowSelector) };
-        } else {
-            this.state = RecordsetEditor.insertBefore(recordset, row, rowSelector);
-        }
-        return this;
-    }
-
-    insertRowByIndex(head: number, row: Record): RecordsetEditor {
-        let recordset = this.state;
-        if (Guards.isIRecordset(recordset)) {
-            let filter = recordset.filter;
-            let records = recordset.records;
-            if (filter) {
-                // if there's a filter, then index refers to the position in the filtered records
-                let recordBefore = filter.records[head];
-                // so find any key related to the index
-                let key = Guards.isIRecord(recordBefore) ? recordBefore.metadata?.key : undefined;
-                if (key) {
-                    // we have a key, so insert before that key in the main recordset
-                    let rowSelectorByKey = (row : Record) => Guards.isIRecord(row) ? row.metadata?.key === key : row === key;
-                    records = RecordsetEditor.insertBefore(records, row, rowSelectorByKey);
-                } else {
-                    // but fall back to just inserting at the end of the recordset.
-                    records = [ ...records, row ]
-                }
-                filter = { ...filter, records: RecordsetEditor.insertBefore(filter.records, row, head) };
-                this.state = { ...recordset, filter, records };
-            } else {
-                this.state = { ...recordset, records: RecordsetEditor.insertBefore(recordset.records, row, head) };
-            }
-        } else {
-            this.state = RecordsetEditor.insertBefore(recordset, row, head);
-        }
-        return this;
-    }    
-        
-    insertRow(head: KeyPart, row: Record): RecordsetEditor {
-        if (typeof head === 'number')
-            return this.insertRowByIndex(head, row);
-        else
-            return this.insertRowByKey(head, row);
-    }
-
-    private static removeAt<T>(array: T[], selector: number | ((item : T, index?: number) => boolean)) : T[] {
-        let index = typeof selector === 'number' ? selector : array.findIndex(selector);
-        return [ ...array.slice(0,index), ...array.slice(index+1)];
-    }
-
-    removeRowByKey(head: KeyPart): RecordsetEditor {
-        let recordset = this.state;
-        let rowSelector = (row : Record) => Guards.isIRecord(row) ? row.metadata?.key === head : row === head
-        if (Guards.isIRecordset(recordset)) {
-            let filter = recordset.filter;
-            if (filter) {
-                filter = { ...filter, records: RecordsetEditor.removeAt(filter.records,rowSelector) } ;
-            }
-            this.state = { ...recordset, filter, records: RecordsetEditor.removeAt(recordset.records,rowSelector) };
-        } else {
-            this.state = recordset.filter(rowSelector);
-        }
-        return this;
-    }
-
-    removeRowByIndex(head: number): RecordsetEditor {
-        let recordset = this.state;
-        if (Guards.isIRecordset(recordset)) {
-            let filter = recordset.filter;
-            let records = recordset.records;
-            if (filter) {
-                // if there's a filter, then index refers to the position in the filtered records
-                let record = filter.records[head];
-                // so find any key related to the index
-                let key = Guards.isIRecord(record) ? record.metadata?.key : undefined;
-                if (key) {
-                    // we have a key, so insert before that key in the main recordset
-                    let rowSelectorByKey = (row : Record) => Guards.isIRecord(row) ? row.metadata?.key !== key : row !== key;
-                    records = RecordsetEditor.removeAt(records, rowSelectorByKey);
-                } else {
-                    // really nothing we can do here
-                    throw new TypeError('must specify a key rather than an index when removing a record from a filtered recordset');
-                }
-                filter = { ...filter, records: RecordsetEditor.removeAt(records, head) };
-                this.state = { ...recordset, filter, records };
-            } else {
-                this.state = { ...recordset, records: RecordsetEditor.removeAt(records, head) };
-            }
-        } else {
-            this.state = RecordsetEditor.removeAt(recordset, head);
-        }
-        return this;
-    }    
-
-    removeRow(head: KeyPart): RecordsetEditor {
-        if (typeof head === 'number')
-            return this.removeRowByIndex(head);
-        else
-            return this.removeRowByKey(head);
-        return this;
-    }
-
-    addRow(row: Record): RecordsetEditor {
-        let recordset = this.state;
-        if (Guards.isIRecordset(recordset)) {
-            this.state = { ...recordset, records: [...recordset.records, row] }
-        } else {
-            this.state = [...recordset, row]
-        }
+    sort(sort: Sort) : RecordsetEditor {
+        this.state = { ...this.state, filter: this.getViewEditor(this.state.filter).sort(sort).getState() } 
         return this;
     }
 
@@ -368,38 +567,53 @@ class RecordsetEditor extends BaseStateEditor<Recordset> {
 
     mergeMetadata(metadata: IMetadataCarrier): this {
         if (isEmpty(metadata)) return this;
-        if (Guards.isIRecordset(this.state)) {
-            this.state = prune({ ...this.state, metadata: { ...this.state.metadata, ...metadata.metadata } })
-        } else {
-            this.state = prune({ records: this.state, metadata: metadata.metadata })
-        }
+        // we don't merge child metadata as every record should be a metadata carrier, so there should be none
+        this.state = prune({ ...this.state, metadata: { ...this.state.metadata, ...metadata.metadata } })
         return this;
     }
 
-    mergeState(recordset: Recordset): this {
+    replaceMetadata(carrier: IMetadataCarrier): this {
+        let { metadata } = carrier;
+        // we don't replace child metadata as every record should be a metadata carrier, so there should be none
+        this.state = { ...this.state, metadata }
+        return this;
+    }    
+
+    mergeRecords(a: { [ key: string] : Record }, b: { [ key: string] : Record }) : { [ key: string] : Record } {
+
+        let result = { ...a }
+
+        for (const [key,record] of Object.entries(b)) {
+                if (record !== null) {
+                    if (a[key]) {
+                        result[key] = new RecordEditor(this.config?.value, a[key]).merge(record).getState();
+                    } else {
+                        result[key] = record;
+                    }
+                } else {
+                    delete result[key];
+                }
+        }
+
+        return result;
+
+    }
+
+    merge(recordset: IRecordset): this {
         let mergedMetadata: IMetadataCarrier;
-        let records: Record[];
+        let records: { [key: string] : Record};
 
-        if (Guards.isIRecordset(this.state) && Guards.isIRecordset(recordset)) {
-            mergedMetadata = mergeIMetadataCarrier(this.state, recordset);
-            records = [...this.state.records, ...recordset.records];
-        } else if (Guards.isIRecordset(this.state)) {
-            mergedMetadata = this.state;
-            records = [...this.state.records, ...(recordset as Record[])];
-        } else {
-            mergedMetadata = recordset as IRecordset;
-            records = [...(this.state as Record[]), ...(recordset as IRecordset).records];
-        }
+        mergedMetadata = mergeIMetadataCarrier(this.state, recordset);
+        records = this.mergeRecords(this.state.records, recordset.records);
 
-        if (isEmpty(mergedMetadata))
-            this.state = records;
-        else
-            this.state = { ...mergedMetadata, records }
+        this.state = { ...this.state, ...mergedMetadata, records }
 
         return this;
     }
 
-
+    getMetadata() : IMetadataCarrier {
+        return { metadata: {} }
+    }
 }
 
 class PrimitiveEditor extends BaseStateEditor<NullablePrimitive> {
@@ -411,35 +625,39 @@ class PrimitiveEditor extends BaseStateEditor<NullablePrimitive> {
         this.metadata = metadata;
     }
 
-    set(path: Key, value: NullablePrimitive): this {
-        if (path.length > 0) {
-            if (this.getType() === DataType.REFERENCE)
-                throw new ReferenceBoundary(this.config as Config, ...path);
-            else
-                throw new TypeError(`no element ${path.join('.')} in ${this.getType()}`);
-        } else {
-            this.state = value;
-        }
-        return this;
+    getChild(head: KeyPart): Primitive {
+        if (this.getType() === DataType.REFERENCE)
+            throw new ReferenceBoundary(this.config as Config, head);
+        else
+            throw new TypeError(`no element ${head} in ${this.getType()}`);    
     }
 
-    get(path: Key): NullablePrimitive {
-        if (path.length > 0) {
-            if (this.getType() === DataType.REFERENCE)
-                throw new ReferenceBoundary(this.config as Config, ...path);
-            else
-                throw new TypeError(`no element ${path.join('.')} in ${this.getType()}`);
-        } else {
-            return this.state;
-        }
+    getChildMetadata(head: KeyPart): IMetadataCarrier | undefined {
+        if (this.getType() === DataType.REFERENCE)
+            throw new ReferenceBoundary(this.config as Config, head);
+        else
+            throw new TypeError(`no element ${head} in ${this.getType()}`);    
     }
 
-    getChild<State>(head: KeyPart): State {
-        throw new TypeError(`object type ${this.getType()} does not have a child ${head}`)
+    insertChild(head: KeyPart, child: Primitive): this {
+        if (this.getType() === DataType.REFERENCE)
+            throw new ReferenceBoundary(this.config as Config, head);
+        else
+            throw new TypeError(`no element ${head} in ${this.getType()}`);    
     }
 
-    setChild<State>(head: KeyPart, child: State): void {
-        throw new TypeError(`object type ${this.getType()} does not have a child ${head}`)
+    deleteChild(head: KeyPart): this {
+        if (this.getType() === DataType.REFERENCE)
+            throw new ReferenceBoundary(this.config as Config, head);
+        else
+            throw new TypeError(`no element ${head} in ${this.getType()}`);    
+    }
+
+    setChild(head: KeyPart, child: Primitive): this {
+        if (this.getType() === DataType.REFERENCE)
+            throw new ReferenceBoundary(this.config as Config, head);
+        else
+            throw new TypeError(`no element ${head} in ${this.getType()}`);    
     }
 
     mergeMetadata(metadata: IMetadataCarrier): this {
@@ -447,7 +665,12 @@ class PrimitiveEditor extends BaseStateEditor<NullablePrimitive> {
         return this;
     }
 
-    mergeState(primitiveB: NullablePrimitive): this {
+    replaceMetadata(metadata: IMetadataCarrier): this {
+        this.metadata = metadata;
+        return this;
+    }
+
+    merge(primitiveB: NullablePrimitive): this {
         if (primitiveB !== undefined) this.state = primitiveB;
         return this;
     }
@@ -471,25 +694,36 @@ class RecordEditor extends StateEditor<Record> {
         }
     }
 
-    getChild<Field>(head: KeyPart): Field | undefined {
-        return this.valueEditor.getChild(head) as unknown as Field;
+    getChild(head: KeyPart): Field {
+        return this.valueEditor.getChild(head) as Field;
     }
 
-    setChild<Field>(head: KeyPart, child: Field): void {
-        this.valueEditor.setChild(head, child as any); // Seriously, what the fuck is going on with this
+    getChildMetadata(head: KeyPart): IMetadataCarrier | undefined {
+        return this.valueEditor.getChildMetadata(head);
     }
 
-    set(path: Key, value: NullablePrimitive): this {
+    insertChild(head: KeyPart, child: Field): this {
+        this.valueEditor.insertChild(head, child); 
+        return this;
+    }
+
+    setChild(head: KeyPart, child: Field): this {
+        this.valueEditor.setChild(head, child); 
+        return this;
+    }    
+
+    deleteChild(head: KeyPart): this {
+        this.valueEditor.deleteChild(head); 
+        return this;
+    }    
+
+    set(path: Key, value: Field): this {
         this.valueEditor.set(path, value);
         return this;
     }
 
-    get(path: Key): NullablePrimitive | undefined {
+    get(path: Key): State | undefined {
         return this.valueEditor.get(path);
-    }
-
-    getType(): DataType {
-        return this.valueEditor.getType();
     }
 
     getEditor(head: KeyPart): StateEditor<State> {
@@ -510,52 +744,37 @@ class RecordEditor extends StateEditor<Record> {
     }
 
     getMetadata(): IMetadataCarrier {
-        return this.valueEditor.getMetadata();
+        return { metadata: {} }
     }
 
     getConfig(): Config | undefined {
         return this.valueEditor.getConfig();
     }
 
-    mergeMetadata(metadata: IMetadataCarrier, mergeForward = true): this {
+    mergeMetadata(metadata: IMetadataCarrier): this {
         if (isEmpty(metadata)) return this;
-
-        // First we merge the record value
-        this.valueEditor.mergeMetadata(metadata, mergeForward);
-        this.valueEditor = edit(
-            this.valueEditor.getConfig(), 
-            this.valueEditor.getState(), 
-            prune(this.valueEditor.getMetadata() || {})
-        ) as StateEditor<Field>;
-
+        this.valueEditor.mergeMetadata(metadata);
         return this;
     }
 
-    mergeState(record: Record): this {
+    replaceMetadata(metadata: IMetadataCarrier): this {
+        this.valueEditor.replaceMetadata(metadata);
+        return this;
+    }
+
+    merge(record: Record): this {
         if (Guards.isIRecord(record)) {
-            this.valueEditor.mergeState(record.value);
+            this.valueEditor.merge(record.value);
+            this.mergeMetadata(record);
         } else {
-            this.valueEditor.mergeState(record);
-        }
-        return this;
-    }
-
-    editAt(path: Key, editOperation: (editor: StateEditor<State>) => void): this {
-        if (path.length > 0) {
-            const [head, ...tail] = path;
-            let childEditor = this.valueEditor.getEditor(head);
-            childEditor.editAt(tail, editOperation);
-            this.setChild(head, childEditor.getState())
-            let childMetadata = childEditor.getMetadata();
-            if (childMetadata && !isEmpty(childMetadata)) this.mergeMetadata({ metadata: {}, childMetadata: { [head]: childMetadata } }, false);
-        } else {
-            editOperation(this.valueEditor);
+            this.valueEditor.merge(record);
         }
         return this;
     }
 }
 
 class FieldMappingEditor extends BaseStateEditor<FieldMapping> {
+
 
     metadata: IMetadataCarrier;
 
@@ -564,12 +783,33 @@ class FieldMappingEditor extends BaseStateEditor<FieldMapping> {
         this.metadata = metadata;
     }
 
-    setChild<Field>(head: KeyPart, value: Field): void {
-        this.state = { ...this.state, [head]: value } as FieldMapping;
+    insertChild(head: KeyPart, value: Field): this {
+        if (this.state[head] === undefined) throw new RangeError('attempt to insert field with existing key');
+        return this.setChild(head, value);
     }
 
-    getChild<Field>(head: KeyPart): Field | undefined {
-        return this.state[head] as any; // Really, really no idea why I need this cast to any 
+    setChild(head: KeyPart, value: Field): this {
+        this.state = { ...this.state, [head]: value } as FieldMapping;
+        return this;
+    }
+
+    deleteChild(head: KeyPart): this {
+        const { [head] : _drop, ...state } = this.state;
+        this.state = state;
+        return this;
+    }    
+
+    getChild(head: KeyPart): Field {
+        return this.state[head]; 
+    }
+
+    getChildMetadata(head: KeyPart): IMetadataCarrier | undefined {
+        return this.metadata?.childMetadata?.[head]
+    }
+
+    replaceMetadata(metadata: IMetadataCarrier): this {
+        this.metadata = metadata;
+        return this;
     }
 
     private static createFieldsetFromMetadata(config: Config, metadata: IMetadataCarrier) {
@@ -594,7 +834,7 @@ class FieldMappingEditor extends BaseStateEditor<FieldMapping> {
     private static createStateFromMetadata(config: Config, metadata: IMetadataCarrier): { state?: State, metadata?: IMetadataCarrier } {
         switch (config.type) {
             case DataType.RECORDSET:
-                return { state: { ...metadata, records: [] } } // we don't merge record data
+                return { state: { ...metadata, records: {} } } // we don't merge record data
             case DataType.FIELDSET:
                 return FieldMappingEditor.createFieldsetFromMetadata(config, metadata);
             default:
@@ -605,34 +845,28 @@ class FieldMappingEditor extends BaseStateEditor<FieldMapping> {
         }
     }
 
-    mergeMetadata(metadata: IMetadataCarrier, mergeForward = true): this {
+    mergeMetadata(metadata: IMetadataCarrier): this {
         let sourceChildMetadata = metadata.childMetadata;
-        let childMetadata: ChildMetadata = {}
-        let resultFields: FieldMapping = { ...this.state }
         if (sourceChildMetadata) {
-            if (mergeForward) {
                 // If mergeForward is set we have to assume that the supplied metadata may contain
                 // child metadata for metadata carriers which are children of this field mapping -
                 // for example a recordset which is a field
                 for (const fieldName of Object.keys(sourceChildMetadata)) {
                     const child = sourceChildMetadata[fieldName];
-                    this.editAt([fieldName], editor => editor.mergeMetadata(child, true))
+                    this.editAt([fieldName], editor => editor.mergeMetadata(child))
                 }
                 this.metadata = mergeIMetadataCarrier(this.metadata, { metadata: metadata.metadata });
-            } else {
-                this.metadata = mergeIMetadataCarrier(this.metadata, metadata);
-            }
         } else {
             this.metadata = mergeIMetadataCarrier(this.metadata, metadata);
         }
         return this;
     }
 
-    mergeState(fieldsetB: FieldMapping): this {
+    merge(fieldsetB: FieldMapping): this {
         let merged: FieldMapping = {};
         for (const fieldName of new Set([...Object.keys(this.state), ...Object.keys(fieldsetB)])) {
             let childEditor = this.getEditor(fieldName);
-            childEditor.mergeState(fieldsetB[fieldName]);
+            childEditor.merge(fieldsetB[fieldName]);
             let child = childEditor.getState();
             if (child) merged[fieldName] = child as Field;
         }
@@ -675,16 +909,17 @@ function isEmpty(carrier: IMetadataCarrier) {
     return (carrier?.metadata === undefined || Object.keys(carrier.metadata).length === 0) && (carrier?.childMetadata === undefined || Object.keys(carrier.childMetadata).length === 0)
 }
 
-export function edit(config?: Config, state?: State, metadata?: IMetadataCarrier): StateEditor<State> {
+export function edit<T extends State>(config?: Config, state?: T, metadata?: IMetadataCarrier): StateEditor<T> {
     const type = getDataType(state, config);
     switch (type) {
-        case DataType.RECORDSET: return new RecordsetEditor(config, state as Recordset);
-        case DataType.RECORD: return new RecordEditor(config, state as Record);
-        case DataType.FIELDSET: return new FieldMappingEditor(config, state as FieldMapping, metadata);
+        case DataType.RECORDSET: return new RecordsetEditor(config, <IRecordset> state) as unknown as StateEditor<T>;
+        case DataType.RECORD: return new RecordEditor(config, <Record>state) as unknown as StateEditor<T>;
+        case DataType.FIELDSET: return new FieldMappingEditor(config, <FieldMapping>state, metadata) as unknown as StateEditor<T>;
+        case DataType.ARRAY: return new FieldArrayEditor(config, <FieldArray>state, metadata) as unknown as StateEditor<T>;
         case DataType.STRING:
         case DataType.REFERENCE:
         case DataType.NUMBER:
-        case DataType.DATETIME: return new PrimitiveEditor(config, state as NullablePrimitive, metadata);
+        case DataType.DATETIME: return new PrimitiveEditor(config, <NullablePrimitive>state, metadata) as unknown as StateEditor<T>;
         default:
             throw new TypeError(`unhandled type ${type}`);
     }

@@ -6,6 +6,7 @@ export enum DataType {
     RECORD = "RECORD",
     RECORDSET = "RECORDSET",
     FIELDSET = "FIELDSET",
+    ARRAY = "ARRAY",
     NUMBER = "NUMBER",
     STRING = "STRING",
     DATETIME = "DATETIME",
@@ -20,7 +21,7 @@ export enum DataType {
 export function getDataType(state?: State, config?: Config) : DataType {
     switch (config?.type) {
         case DataType.RECORDSET:
-            if (!Guards.isRecordset(state)) throw new TypeError(`State does not match configured type ${config.type}`)
+            if (!Guards.isIRecordset(state)) throw new TypeError(`State does not match configured type ${config.type}`)
             return config.type;
         case DataType.FIELDSET:
             if (Guards.isPrimitive(state)) throw new TypeError(`State does not match configured type ${config.type}`)
@@ -40,16 +41,22 @@ export function getDataType(state?: State, config?: Config) : DataType {
         case DataType.DATETIME:
             if (!Guards.isDateTime(state)) throw new TypeError(`State does not match configured type ${config.type}`)
             return config.type;
+        case DataType.ARRAY:
+            if (!Array.isArray(state)) throw new TypeError(`State does not match configured type ${config.type}`)
+            return config.type;            
         case undefined:
             // no config, so figure out type as best we can
             switch (typeof state) {
-                case 'number' : return DataType.NUMBER;
+                case 'number' : 
+                        return DataType.NUMBER;
                 case 'string' : 
                         return DataType.STRING;
                 default:
                     if (DateTime.isDateTime(state))
                         return DataType.DATETIME;
-                    else if (Guards.isRecordset(state))
+                    else if (Array.isArray(state))
+                        return DataType.ARRAY;
+                    else if (Guards.isIRecordset(state))
                         return DataType.RECORDSET;
                     else if (Guards.isRecord(state))
                         return DataType.RECORD;

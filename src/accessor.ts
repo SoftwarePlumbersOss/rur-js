@@ -1,10 +1,10 @@
 import { DataType, getDataType } from './datatype';
-import { State, Guards as StateGuards, Recordset, Record, NullablePrimitive, Field, IMetadata, IMetadataCarrier, FieldMapping, MetadataPrimitive } from './state';
+import { State, Guards as StateGuards, IRecordset, Record, NullablePrimitive, Field, IMetadata, IMetadataCarrier, FieldMapping, MetadataPrimitive, FieldArray, FieldArrayContent } from './state';
 import { Config, getConfig } from './config';
 import { ReferenceBoundary, Exception } from './exceptions';
-import { Action, ActionType, MetadataAction, ValueAction, RecordAction, MetadataValueAction, SearchAction } from './reducer';
+import { Action, ActionType, MetadataAction, ValueAction, RowAction, MetadataValueAction, SearchAction } from './reducer';
 import { Key, KeyPart } from './types';
-import { PackedCriteria } from './criteria';
+import { Guards, PackedCriteria } from './criteria';
 import getRegistry from "./registry"
 
 
@@ -16,28 +16,9 @@ function logReturn(name: string, value: any) : any {
 function logEntry(name: string, ...value : any) {
     //console.log(`entering ${name}`, ...value);
 }
+export type Datum = NullablePrimitive | View | undefined;
 
-export function getRow(state : Recordset, index : number) : Record {
-    if (StateGuards.isIRecordset(state)) {
-        return state.records[index];
-    } else {
-        return state[index];
-    } 
-}
-
-export function getRowByKey(state: Recordset, key : NullablePrimitive) : Record | undefined {
-    if (StateGuards.isIRecordset(state)) {
-        return state.records.find(row => StateGuards.isIRecord(row) ? row.metadata?.key === key : row === key);
-    } else {
-        return state.find(row => StateGuards.isIRecord(row) ? row.metadata?.key === key : row === key);
-    } 
-}
-
-
-
-export type Datum = NullablePrimitive | Proxy | undefined;
-
-class Proxy implements Iterable<Datum> {
+export class View {
     protected accessor : Accessor;
     protected state : any;
     protected path : Key;
@@ -56,56 +37,16 @@ class Proxy implements Iterable<Datum> {
         return this.accessor.getMetadata(this.state, ...this.path, ...key);
     }    
 
-    getIndex() {
-        return this.path[this.path.length - 1] as number;
+    keys() : Iterable<KeyPart> {
+        return this.accessor.keys(this.state, ...this.path);
     }
 
-    [Symbol.iterator]() : Iterator<Datum> {
-        return {
-            next(value?: any) {
-                return {
-                    done: true,
-                    value: undefined
-                }
-            }
-        }
+    get key() : KeyPart {
+        return this.path[this.path.length - 1];
     }
 }
 
-class Slice extends Proxy {
-
-    protected from : number
-    protected to : number
-
-    constructor(accessor: Accessor, state : any, from: number, to: number, ...path : Key) {
-        super(accessor, state, ...path);
-        this.from = from;
-        this.to = to;
-    }
-
-    [Symbol.iterator]() : Iterator<Datum> {
-        let index = this.from;
-        const _this = this;
-        return {
-            next(value? : any) {
-                if (_this.to > index) {
-                    const current = index++;
-                    return {
-                        done: false,
-                        value: _this.accessor.getRoot(_this.state, ..._this.path, current)
-                    }
-                } else {
-                    return {
-                        done: true,
-                        value: undefined
-                    };
-                }
-            }
-        }
-    }
-}
-
-export type Calculator = (accessor : ((...key : Key) => NullablePrimitive | Proxy | undefined), ...path : Key) => NullablePrimitive | undefined
+export type Calculator = (accessor : ((...key : Key) => NullablePrimitive | View | undefined), ...path : Key) => NullablePrimitive | undefined
 
 export abstract class Accessor {
 
@@ -115,19 +56,23 @@ export abstract class Accessor {
         this.parent = parent;
     }
 
+    static keys(datum : Datum) : Iterable<KeyPart> {
+        return (datum instanceof View) ? datum.keys() : [];
+    }
+
     abstract get(state: any, ...key : Key) : Datum
     abstract getMetadata(state: any, ...key: Key) : NullablePrimitive | undefined
     abstract getConfig(...key : Key) : Config | undefined
     abstract setParent(parent : Accessor) : Accessor;
+    abstract keys(state: any, ...key: Key) : Iterable<KeyPart>;
 
     abstract set(value : NullablePrimitive, ...key: Key) : ValueAction
     abstract setMetadata(value : MetadataPrimitive, ...key: Key) : MetadataValueAction
     abstract mergeMetadata(value : IMetadata, ...key: Key) : MetadataAction
-    abstract insertValue(value : Record, ...key: Key) : RecordAction
+    abstract insertValue(value : Field, ...key: Key) : ValueAction
     abstract removeValue(...key: Key) : Action
-    abstract addValue(value : Record, ...key: Key) : RecordAction
-    abstract updateValue(value : Record, ...key: Key) : RecordAction
-    abstract upsertValue(value : Record, ...key: Key) : RecordAction
+    abstract addValue(value : FieldArrayContent, ...key: Key) : RowAction
+    abstract updateValue(value : Field, ...key: Key) : ValueAction
     abstract validate(metadata: IMetadataCarrier, ...key: Key) : MetadataAction
     abstract setError(Exception: Exception, ...key: Key) : MetadataAction
     abstract search(criteria : PackedCriteria, ...key: Key) : SearchAction
@@ -184,6 +129,45 @@ export abstract class Accessor {
         return new BaseAccessor(this.config, this.basePath, parent);
     }
 
+    keys(state: any, ...key : Key) : Iterable<KeyPart> {
+        logEntry("BaseAccessor.keys", key);
+        const base = this.getBaseState(state);
+        let value : State | undefined;
+        try {
+            value = this.getState(state, base, this.config, ...key);
+            const type = getDataType(value, getConfig(this.config, ...key));
+            switch (type) {
+                case DataType.RECORDSET:
+                    const recordset = <IRecordset>value;
+                    return recordset.filter?.keys ?? Object.keys(recordset.records);
+                case DataType.ARRAY:
+                    const array = <FieldArray>value;
+                    return array.keys();
+                case DataType.FIELDSET:
+                    const fields = <FieldMapping>value;
+                    return Object.keys(fields);
+                default:
+                    return [];                    
+            }            
+        } catch (err) {
+            if (err instanceof ReferenceBoundary) {
+                let registry = getRegistry(Accessor);
+                let accessor;
+                if (typeof err?.config?.recordset === 'string')
+                    accessor = registry.resolve(err.config.recordset);
+                else {
+                    let name = err?.config?.recordset.name;
+                    accessor = new BaseAccessor(err?.config?.recordset, ["recordset", name]);
+                    registry.register(name, accessor);
+                }
+                return accessor.keys(state, ...err.key);
+            } else {
+                throw err;
+            }
+        }
+    }
+
+
     getBaseState(state : any) : State {
         return this.basePath.reduce((state : any, part : string)=>state[part], state) as State;
     }
@@ -196,11 +180,16 @@ export abstract class Accessor {
             const type = getDataType(value, config);
             switch (type) {
                 case DataType.RECORDSET:
-                    result = (typeof head === 'number') ? getRow(value as Recordset, head) : getRowByKey(value as Recordset, head);
+                    result = (value as IRecordset).records[head as string];
                     if (result !== undefined) {
                         if (StateGuards.isIRecord(result)) result = result.value;
                         result = this.getState(state, result, getConfig(config, head), ...tail)
                     }
+                    break;
+                case DataType.ARRAY:
+                    if (typeof head !== 'number') throw new TypeError('key for array must be a numbet');
+                    const array = value as FieldArray;
+                    result = this.getState(state, array[head], getConfig(config, head), ...tail);
                     break;
                 case DataType.FIELDSET:
                     if (typeof head !== 'string') throw new TypeError('key for fieldset must be a string');
@@ -208,7 +197,7 @@ export abstract class Accessor {
                     result = this.getState(state, fields[head], getConfig(config, head), ...tail);
                     break;
                 case DataType.RECORD:
-                    const record : Field = StateGuards.isIRecord(value) ? value.value : value
+                    const record : Field = StateGuards.isIRecord(value) ? value.value : value as FieldMapping
                     result = this.getState(state, record, config, ...key);
                     break;
                 case DataType.REFERENCE:   
@@ -229,12 +218,8 @@ export abstract class Accessor {
             const type = getDataType(value, config);
             switch (type) {
                 case DataType.RECORDSET:
-                    if (typeof head === 'number')
-                        result = this.getMetadataCarrier(state, getRow(value as Recordset, head), getConfig(config, head), ...tail)
-                    else {
-                        let record = getRowByKey(value as Recordset, head);
-                        result = record ? this.getMetadataCarrier(state, record, getConfig(config, head), ...tail) : undefined
-                    }
+                    let record : Record = (value as IRecordset).records[head as string];
+                    result = record ? this.getMetadataCarrier(state, record, getConfig(config, head), ...tail) : undefined
                     break;
                 case DataType.FIELDSET:
                     if (typeof head !== 'string') throw new TypeError('key for fieldset must be a string');
@@ -242,8 +227,8 @@ export abstract class Accessor {
                     result = this.getMetadataCarrier(state, fields[head], getConfig(config, head), ...tail);
                     break;
                 case DataType.RECORD:
-                    let record : Field = StateGuards.isIRecord(value) ? value.value : value
-                    result = this.getMetadataCarrier(state, record, config, ...key);
+                    let field : Field = StateGuards.isIRecord(value) ? value.value : value as FieldMapping
+                    result = this.getMetadataCarrier(state, field, config, ...key);
                     break;
                 case DataType.REFERENCE:   
                     throw new ReferenceBoundary(config as Config /* unless config exists, we can't tell it's a reference */, value as string, ...key);
@@ -268,17 +253,13 @@ export abstract class Accessor {
             if (value === undefined) return undefined;
             let config = getConfig(this.config, ...key);
             let type = getDataType(value, config);
-            let result : Proxy | NullablePrimitive        
+            let result : View | NullablePrimitive        
             switch (type) {
                 case DataType.RECORDSET:
-                    let recordset = value as Recordset;
-                    // TODO: make this work with filteredRecords as well
-                    let length : number = StateGuards.isIRecordset(recordset) ? recordset.records.length : recordset.length;
-                    result = new Slice(this, state, 0, length, ...key);
-                    break;
                 case DataType.FIELDSET:
                 case DataType.REFERENCE:
-                    result = new Proxy(this, state, ...key);
+                case DataType.ARRAY:
+                        result = new View(this, state, ...key);
                     break;
                 default:
                     result = value as NullablePrimitive;
@@ -322,24 +303,20 @@ export abstract class Accessor {
         return { ...metadata, type: ActionType.mergeMetadata, config: this.config, base: this.basePath, key };
     }
 
-    insertValue(record: Record, ...key : Key) : RecordAction {
-        return { type: ActionType.insertValue, config: this.config, base: this.basePath, key, record };
+    insertValue(value: Field, ...key : Key) : ValueAction {
+        return { type: ActionType.insertValue, config: this.config, base: this.basePath, key, value };
     }
 
     removeValue(...key : Key) : Action {
         return { type: ActionType.removeValue, config: this.config, base: this.basePath, key };
     }
 
-    addValue(record: Record, ...key : Key) : RecordAction {
-        return { type: ActionType.addValue, config: this.config, base: this.basePath, key, record };
+    addValue(row: FieldArrayContent, ...key : Key) : RowAction {
+        return { type: ActionType.addValue, config: this.config, base: this.basePath, key, row };
     }
 
-    updateValue(record: Record, ...key : Key) : RecordAction {
-        return { type: ActionType.updateValue, config: this.config, base: this.basePath, key, record };
-    }
-
-    upsertValue(record: Record, ...key : Key) : RecordAction {
-        return { type: ActionType.upsertValue, config: this.config, base: this.basePath, key, record };
+    updateValue(value: Field, ...key : Key) : ValueAction {
+        return { type: ActionType.updateValue, config: this.config, base: this.basePath, key, value };
     }
 
     search(criteria : PackedCriteria, ...key : Key) : SearchAction {
@@ -397,6 +374,11 @@ export abstract class DelegatingAccessor extends Accessor {
         return this.accessor.set(value, ...key);
     }    
 
+    keys(state : any, ...key : Key) : Iterable<KeyPart> {
+        return this.accessor.keys(state, ...key);
+    }
+
+
     setMetadata(value: MetadataPrimitive, ...key : Key) : MetadataValueAction {
         return this.accessor.setMetadata(value, ...key);
     }  
@@ -414,23 +396,19 @@ export abstract class DelegatingAccessor extends Accessor {
         return this.accessor.validate(metadata, ...key);
     }      
 
-    insertValue(value: Record, ...key : Key) : RecordAction {
+    insertValue(value: Field, ...key : Key) : ValueAction {
         return this.accessor.insertValue(value, ...key);
     }  
 
-    updateValue(value: Record, ...key : Key) : RecordAction {
+    updateValue(value: Field, ...key : Key) : ValueAction {
         return this.accessor.updateValue(value, ...key);
-    }  
-
-    upsertValue(value: Record, ...key : Key) : RecordAction {
-        return this.accessor.upsertValue(value, ...key);
     }  
 
     removeValue(...key : Key) : Action {
         return this.accessor.removeValue(...key);
     }  
 
-    addValue(value: Record, ...key : Key) : RecordAction {
+    addValue(value: FieldArrayContent, ...key : Key) : RowAction {
         return this.accessor.addValue(value, ...key);
     }  
 
@@ -457,7 +435,7 @@ export class CalculatedFieldsAccessor extends DelegatingAccessor {
     }
 
     get(state : any, ...key : Key) {
-        let result : NullablePrimitive | Proxy | undefined = this.calculator((...k) => this.getRoot(state, ...k), ...key);
+        let result : NullablePrimitive | View | undefined = this.calculator((...k) => this.getRoot(state, ...k), ...key);
         if (result === undefined) result = this.accessor.get(state, ...key);
         return result;
     }

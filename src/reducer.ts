@@ -1,9 +1,10 @@
 import { Config } from './config';
-import { State, Record, NullablePrimitive,  IMetadataCarrier, MetadataPrimitive } from './state';
+import { State, Record, NullablePrimitive,  IMetadataCarrier, MetadataPrimitive, Field, FieldArrayContent } from './state';
 import { validate } from './validation';
 import { Key } from './types'; 
 import { StateEditor, edit } from './editor';
 import { PackedCriteria } from './criteria';
+import { Sort } from './sort';
 
 export enum ActionType {
     setValue = "RUR_SET_VALUE",
@@ -15,7 +16,8 @@ export enum ActionType {
     upsertValue = "RUR_UPSERT_VALUE",
     removeValue = "RUR_REMOVE_VALUE",
     validate = "RUR_VALIDATE",
-    search = "RUR_SEARCH"
+    search = "RUR_SEARCH",
+    sort = "RUR_SORT",
 }
 
 export interface Action {
@@ -26,15 +28,14 @@ export interface Action {
 }
 
 export interface ValueAction extends Action {
-    value: NullablePrimitive
+    value: Field
 }
 
 export interface MetadataValueAction extends Action {
     metaValue: MetadataPrimitive
 }
-
-export interface RecordAction extends Action {
-    record: Record
+export interface RowAction extends Action {
+    row: FieldArrayContent
 }
 export interface MetadataAction extends Action, IMetadataCarrier {
 }
@@ -42,13 +43,17 @@ export interface MetadataAction extends Action, IMetadataCarrier {
 export interface SearchAction extends Action {
     criteria: PackedCriteria
 }
+export interface SortAction extends Action {
+    sort: Sort
+}
+
 
 export const Guards = {  
     isValueAction(action : Action) : action is ValueAction {
         return (action as ValueAction).value !== undefined;
     },
-    isRecordAction(action : Action) : action is RecordAction {
-        return (action as RecordAction).record !== undefined;
+    isRowAction(action : Action) : action is RowAction {
+        return (action as RowAction).row !== undefined;
     },
     isMetadataAction(action : Action) : action is MetadataAction {
         return (action as MetadataAction).metadata !== undefined;
@@ -58,6 +63,9 @@ export const Guards = {
     },     
     isSearchAction(action : Action) : action is SearchAction {
         return (action as SearchAction).criteria !== undefined;
+    },     
+    isSortAction(action : Action) : action is SortAction {
+        return (action as SortAction).sort !== undefined;
     }     
 
 }
@@ -89,15 +97,15 @@ export function reduce(state: any, action: Action) : any {
             editor.mergeMetadataAt(action.key, action);
             break;            
         case ActionType.insertValue:
-            if (!Guards.isRecordAction(action)) throw new TypeError("wrong type for action");
-            editor.insertRecordAt(action.key, action.record);
-            break;
+            if (!Guards.isValueAction(action)) throw new TypeError("wrong type for action");
+            editor.insertAt(action.key, action.value);
+            break;    
         case ActionType.addValue:
-            if (!Guards.isRecordAction(action)) throw new TypeError("wrong type for action");
-            editor.addRecordAt(action.key, action.record);
-            break;            
+            if (!Guards.isRowAction(action)) throw new TypeError("wrong type for action");
+            editor.addAt(action.key, action.row);
+            break;                    
         case ActionType.removeValue:
-            editor.removeRecord(action.key);
+            editor.deleteAt(action.key);
             break;
         case ActionType.validate:
             if (!Guards.isMetadataAction(action)) throw new TypeError("wrong type for action");
@@ -107,9 +115,12 @@ export function reduce(state: any, action: Action) : any {
         case ActionType.search:
             if (!Guards.isSearchAction(action)) throw new TypeError("wrong type for action");
             editor.searchAt(action.key, action.criteria);
-            editor.editAt(action.key, validate);
             break;            
-    }
+        case ActionType.sort:
+            if (!Guards.isSortAction(action)) throw new TypeError("wrong type for action");
+            editor.sortAt(action.key, action.sort);
+            break;            
+        }
 
     return setBase(state, action.base, editor.getState());
 }

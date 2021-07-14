@@ -27,6 +27,11 @@ export interface RecordsetConfig extends Config {
     value : FieldConfig
 }
 
+// type === RECORDSET
+export interface ArrayConfig extends Config {
+    value : FieldConfig
+}
+
 export class Guards {
     static isRecordsetConfig(config: Config) : config is RecordsetConfig {
         return config.type === DataType.RECORDSET;
@@ -40,10 +45,15 @@ export class Guards {
         return config.type === DataType.REFERENCE;
     }
 
-    static isRecordConfig(config: Config) : config is ReferenceConfig {
+    static isRecordConfig(config: Config) : config is RecordsetConfig {
         return config.type === DataType.RECORD;
     }    
+
+    static isArrayConfig(config: Config) : config is ArrayConfig {
+        return config.type === DataType.ARRAY;
+    }    
 }
+
 
 export function getConfig(config? : Config, ...key : Key) : Config | undefined {
     if (key.length > 0) {
@@ -51,11 +61,13 @@ export function getConfig(config? : Config, ...key : Key) : Config | undefined {
         if (!config) {
             if (typeof head === 'string')
                 config = { type: DataType.FIELDSET, fields: {} }
-            else
+            else if (typeof head === 'number')
+                config = { type: DataType.ARRAY }
+            else 
                 config = { type: DataType.RECORDSET }
         }
         let result;
-        if (Guards.isRecordsetConfig(config))
+        if (Guards.isRecordsetConfig(config) || Guards.isArrayConfig(config))
             result = getConfig(config.value, ...tail);
         else if (Guards.isRecordConfig(config))
             result = getConfig(config.value, ...tail);

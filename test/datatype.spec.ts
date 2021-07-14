@@ -17,7 +17,7 @@ describe('get datatype from State without config', ()=>{
     });
 
     it('gets datatype for an array', () => {
-        expect(getDataType([])).toBe(DataType.RECORDSET);
+        expect(getDataType([])).toBe(DataType.ARRAY);
     });
 
     it('gets datatype for an object', () => {
@@ -40,7 +40,8 @@ const config : RecordsetConfig = {
         type: DataType.FIELDSET,
         fields: {
             fieldOne: { type: DataType.STRING },
-            fieldTwo: { type: DataType.NUMBER }
+            fieldTwo: { type: DataType.NUMBER },
+            fieldThree: { type: DataType.ARRAY }
         }
     },
     collectionName: 'abc'
@@ -57,7 +58,7 @@ describe('get datatype from State with config', ()=>{
     });
 
     it('gets datatype for an array', () => {
-        expect(getDataType([], config)).toBe(DataType.RECORDSET);
+        expect(getDataType([], getConfig(config,'*','fieldThree'))).toBe(DataType.ARRAY);
     });
 
     it('gets datatype for a record', () => {

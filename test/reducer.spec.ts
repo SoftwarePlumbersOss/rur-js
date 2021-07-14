@@ -12,17 +12,6 @@ function createStore() { return configureMockStore(middlewares)(initialState); }
 const queueAccessor : Accessor = new BaseAccessor(configQueues, ['recordset', 'queues']);
 
 describe('test simple reducer', ()=>{
-    it('can set a simple field by index', ()=>{
-        let store = createStore();
-        store.dispatch(queueAccessor.set("newQueueName", 0, 'queueName'));
-        expect(queueAccessor.get(store.getState(), 0, 'queueName')).toBe('newQueueName');
-    });
-
-    it('can set a simple field metadata by index', ()=>{
-        let store = createStore();
-        store.dispatch(queueAccessor.setMetadata("wrong", 0, 'queueName', 'error'));
-        expect(queueAccessor.getMetadata(store.getState(), 0, 'queueName', 'error')).toBe('wrong');
-    });
 
     it('can set a simple field by key', ()=>{
         let store = createStore();
@@ -60,13 +49,13 @@ describe('test simple reducer', ()=>{
         let store = createStore();
         store.dispatch(queueAccessor.removeValue('a', 'otherItems', 1));;
         expect(queueAccessor.get(store.getState(),'a','otherItems',0)).toBe('one');
-        expect([...queueAccessor.get(store.getState(),'a','otherItems') as Iterable<any>]).toHaveLength(1);
+        expect([...Accessor.keys(queueAccessor.get(store.getState(),'a','otherItems'))]).toHaveLength(1);
         store = createStore();
         store.dispatch(queueAccessor.removeValue('a', 'otherItems', 0));
         expect(queueAccessor.get(store.getState(),'a','otherItems',0)).toBe('three');
-        expect([...queueAccessor.get(store.getState(),'a','otherItems') as Iterable<any>]).toHaveLength(1);    
+        expect([...Accessor.keys(queueAccessor.get(store.getState(),'a','otherItems'))]).toHaveLength(1);    
         store.dispatch(queueAccessor.removeValue('a', 'otherItems', 0));;
-        expect([...queueAccessor.get(store.getState(),'a','otherItems') as Iterable<any>]).toHaveLength(0);        
+        expect([...Accessor.keys(queueAccessor.get(store.getState(),'a','otherItems'))]).toHaveLength(0);        
     })    
 
     it('can add an array item', ()=>{
