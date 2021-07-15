@@ -1,5 +1,5 @@
 import { DataType, getDataType } from './datatype';
-import { State, Guards as StateGuards, IRecordset, Record, NullablePrimitive, Field, Metadata, IMetadata, IMetadataCarrier, FieldMapping, MetadataPrimitive, FieldArray, FieldArrayContent } from './state';
+import { State, Guards as StateGuards, IRecordset, Record, NullablePrimitive, Field, Metadata, IMetadataCarrier, FieldMapping, MetadataPrimitive, FieldArray, FieldArrayContent } from './state';
 import { Config, getConfig } from './config';
 import { ReferenceBoundary, Exception } from './exceptions';
 import { Action, ActionType, MetadataAction, ValueAction, RowAction, MetadataValueAction, SearchAction } from './reducer';
@@ -80,7 +80,7 @@ export abstract class Accessor {
 
     abstract set(value : DatumIn, ...key: Key) : ValueAction
     abstract setMetadata(value : MetadataPrimitive, ...key: Key) : MetadataValueAction
-    abstract mergeMetadata(value : IMetadata, ...key: Key) : MetadataAction
+    abstract mergeMetadata(value : IMetadataCarrier, ...key: Key) : MetadataAction
     abstract insertValue(value : Field, ...key: Key) : ValueAction
     abstract removeValue(...key: Key) : Action
     abstract addValue(value : DatumIn, ...key: Key) : RowAction
@@ -222,7 +222,7 @@ export abstract class Accessor {
         return logReturn("getState", result);
     }
 
-    getMetadataCarrier(state : any, value : State, config? : Config, ...key : Key) : { carrier: IMetadata, key : Key } | undefined {
+    getMetadataCarrier(state : any, value : State, config? : Config, ...key : Key) : { carrier: IMetadataCarrier, key : Key } | undefined {
         logEntry("getMetadataCarrier", config, value, key);
         let result = undefined;
         if (key.length > 0) {
@@ -315,7 +315,7 @@ export abstract class Accessor {
         return { ...value, type: ActionType.validate, config: this.config, base: this.basePath, key };
     }
 
-    mergeMetadata(metadata: IMetadata, ...key : Key) : MetadataAction {
+    mergeMetadata(metadata: IMetadataCarrier, ...key : Key) : MetadataAction {
         return { ...metadata, type: ActionType.mergeMetadata, config: this.config, base: this.basePath, key };
     }
 
@@ -404,11 +404,11 @@ export abstract class DelegatingAccessor extends Accessor {
 
     }
 
-    mergeMetadata(metadata: IMetadata, ...key : Key) : MetadataAction {
+    mergeMetadata(metadata: IMetadataCarrier, ...key : Key) : MetadataAction {
         return this.accessor.mergeMetadata(metadata, ...key);
     }      
 
-    validate(metadata: IMetadata, ...key : Key) : MetadataAction {
+    validate(metadata: IMetadataCarrier, ...key : Key) : MetadataAction {
         return this.accessor.validate(metadata, ...key);
     }      
 

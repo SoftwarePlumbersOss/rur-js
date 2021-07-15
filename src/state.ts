@@ -9,11 +9,8 @@ export  type NullablePrimitive = Primitive | null;
 export type MetadataPrimitive = string | number | DateTime | Exception | undefined | null;
 
 export type Metadata = { [ propName: string ] : MetadataPrimitive }
-
-export interface IMetadata {
+export interface IMetadataCarrier {
     metadata: Metadata
-}
-export interface IMetadataCarrier extends IMetadata {
     childMetadata? : { [childName: string]: IMetadataCarrier }
     memberMetadata? : [ IMetadataCarrier ] 
 }
@@ -51,7 +48,7 @@ export type State = Field | Record
 
 export class Guards {
 
-    static isIRecord(state?: State | IMetadata): state is IRecord {
+    static isIRecord(state?: State): state is IRecord {
         return (state as IRecord)?.value !== undefined;
     }
 
@@ -87,11 +84,11 @@ export class Guards {
         return state === null || this.isPrimitive(state);
     }
 
-    static isIRecordset(state?: State | IMetadata): state is IRecordset {
+    static isIRecordset(state?: State): state is IRecordset {
         return (state as IRecordset)?.records !== undefined;
     }
 
-    static isIMetadataCarrier(state?: State): state is IMetadataCarrier & State{
+    static isIMetadataCarrier(state?: State): state is IMetadataCarrier & State {
         return Guards.isIRecord(state) || Guards.isIRecordset(state);
     }
 
