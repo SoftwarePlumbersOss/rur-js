@@ -1,5 +1,5 @@
 import { DataType, getDataType } from './datatype';
-import { State, Guards as StateGuards, IRecordset, Record, NullablePrimitive, Field, Metadata, IMetadataCarrier, FieldMapping, MetadataPrimitive, FieldArray, FieldArrayContent } from './state';
+import { State, Guards as StateGuards, IRecordset, RichField, NullablePrimitive, Field, Metadata, IMetadataCarrier, FieldMapping, MetadataPrimitive, FieldArray, FieldArrayContent } from './state';
 import { Config, getConfig } from './config';
 import { ReferenceBoundary, Exception } from './exceptions';
 import { Action, ActionType, MetadataAction, ValueAction, RowAction, MetadataValueAction, SearchAction } from './reducer';
@@ -18,8 +18,6 @@ function logEntry(name: string, ...value : any) {
 }
 
 export type DatumOut = NullablePrimitive | View | undefined;
-
-export type RichField = { value: Field, metadata: Metadata }
 
 export type DatumIn = Field | RichField
 
@@ -194,7 +192,7 @@ export abstract class Accessor {
                 case DataType.RECORDSET:
                     result = (value as IRecordset).records[head as string];
                     if (result !== undefined) {
-                        if (StateGuards.isIRecord(result)) result = result.value;
+                        if (StateGuards.isRichField(result)) result = result.value;
                         result = this.getState(state, result, getConfig(config, head), ...tail)
                     }
                     break;
@@ -209,7 +207,7 @@ export abstract class Accessor {
                     result = this.getState(state, fields[head], getConfig(config, head), ...tail);
                     break;
                 case DataType.RECORD:
-                    const record : Field = StateGuards.isIRecord(value) ? value.value : value as FieldMapping
+                    const record : Field = StateGuards.isRichField(value) ? value.value : value as FieldMapping
                     result = this.getState(state, record, config, ...key);
                     break;
                 case DataType.REFERENCE:   
@@ -230,7 +228,7 @@ export abstract class Accessor {
             const type = getDataType(value, config);
             switch (type) {
                 case DataType.RECORDSET:
-                    let record : Record = (value as IRecordset).records[head as string];
+                    let record = (value as IRecordset).records[head as string];
                     result = record ? this.getMetadataCarrier(state, record, getConfig(config, head), ...tail) : undefined
                     break;
                 case DataType.FIELDSET:
@@ -239,7 +237,7 @@ export abstract class Accessor {
                     result = this.getMetadataCarrier(state, fields[head], getConfig(config, head), ...tail);
                     break;
                 case DataType.RECORD:
-                    let field : Field = StateGuards.isIRecord(value) ? value.value : value as FieldMapping
+                    let field : Field = StateGuards.isRichField(value) ? value.value : value as FieldMapping
                     result = this.getMetadataCarrier(state, field, config, ...key);
                     break;
                 case DataType.REFERENCE:   
@@ -249,7 +247,7 @@ export abstract class Accessor {
 
             }
         } 
-        if (!result && (StateGuards.isIRecord(value) || StateGuards.isIRecordset(value))) {
+        if (!result && (StateGuards.isRichField(value) || StateGuards.isIRecordset(value))) {
             result = { carrier: value, key }
         }
         return logReturn("getMetadataCarrier", result);

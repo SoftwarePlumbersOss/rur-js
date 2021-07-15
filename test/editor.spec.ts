@@ -1,6 +1,6 @@
 import { edit } from '../src/editor';
 import { configQueues, state } from './testdata';
-import { Record, IRecord, IRecordset, FieldMapping } from '../src/state';
+import { IRecordset, FieldMapping, toField } from '../src/state';
 import { Order } from '../src/sort';
 
 const queues = state.recordset.queues;
@@ -54,10 +54,10 @@ describe('test simple editor', ()=>{
     
     it('can insert an entire record by key', ()=>{
         let editor = edit(configQueues, queues);
-        editor.insertAt(['d'], { metadata: {  }, value : { queueName: 'queueD' }} as IRecord);
-        editor.insertAt(['c'], { metadata: {  }, value : { queueName: 'queueC' }} as IRecord);
+        editor.insertAt(['d'], { queueName: 'queueD' });
+        editor.insertAt(['c'], { queueName: 'queueC' });
         let records = (editor.getState() as IRecordset).records;
-        expect(Object.values(records).map(record => ((record as IRecord).value as FieldMapping).queueName)).toEqual(['a','b','queueD','queueC']);
+        expect(Object.values(records).map(record => (toField(record) as FieldMapping).queueName)).toEqual(['a','b','queueD','queueC']);
     });
 
     it('can filter a recordset', ()=>{
@@ -78,17 +78,17 @@ describe('test simple editor', ()=>{
         let editor = edit(configQueues, queues);
         editor.searchAt([], { queueName: { '>': 'a' }});
         // check that when we add a record which complies with the criteria, it is added to to both the filter recordset and the main one
-        editor.insertAt(['d'], { metadata: {}, value : { queueName: 'queueD' }} as IRecord);
+        editor.insertAt(['d'], { queueName: 'queueD' });
         let keys = (editor.getState() as IRecordset).filter?.keys;
         expect(keys).toEqual(['b','d']);
         let records = (editor.getState() as IRecordset).records;
-        expect(Object.values(records).map(record => ((record as IRecord).value as FieldMapping).queueName)).toEqual(['a', 'b','queueD']);
+        expect(Object.values(records).map(record => (toField(record) as FieldMapping).queueName)).toEqual(['a', 'b','queueD']);
         // check that when we add a record which does not comply with the criteria, it is note added to to the filter recordset
-        editor.insertAt(['0'], { metadata: { }, value : { queueName: '0queue' }} as IRecord);
+        editor.insertAt(['0'], { queueName: '0queue' });
         keys = (editor.getState() as IRecordset).filter?.keys;
         expect(keys).toEqual(['b','d']);
         records = (editor.getState() as IRecordset).records;
-        expect(Object.values(records).map(record => ((record as IRecord).value as FieldMapping).queueName)).toEqual(['0queue', 'a', 'b','queueD']);
-    })
+        expect(Object.values(records).map(record => (toField(record) as FieldMapping).queueName)).toEqual(['0queue', 'a', 'b','queueD']);
+    });
 
 });

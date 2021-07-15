@@ -1,4 +1,4 @@
-import { State, NullablePrimitive, Primitive, FieldArray, FieldArrayContent, Record, IRecord, IRecordset, Guards, FieldMapping, Field, IMetadataCarrier, ChildMetadata, Metadata, MetadataPrimitive, Filter as View } from './state';
+import { State, NullablePrimitive, Primitive, FieldArray, FieldArrayContent, RichField, IRecordset, Guards, FieldMapping, Field, IMetadataCarrier, ChildMetadata, Metadata, MetadataPrimitive, Filter as View } from './state';
 import { Key, KeyPart } from './types';
 import { DataType, getDataType } from './datatype';
 import { Config, getConfig } from './config';
@@ -189,7 +189,7 @@ export abstract class StateEditor<T extends State> {
 
     getMetadataAt(key: Key): MetadataPrimitive {
         return this.find(key.slice(0,-1))?.getAllMetadata().metadata?.[key[key.length-1]];
-    }
+        }
 
     searchAt(key: Key, criteria: PackedCriteria): this {
         return this.editAt(key, editor => {
@@ -371,18 +371,18 @@ class ViewEditor {
     private expandedCriteria? : Filter;
     private config? : Config;
     private state : View;
-    private allRecords : { [ key: string ] : Record };
+    private allRecords : { [ key: string ] : State };
 
-    constructor(config : Config | undefined, state: View, allRecords: { [ key: string ] : Record }) {
+    constructor(config : Config | undefined, state: View, allRecords: { [ key: string ] : State }) {
         this.state = state;
         this.config = config;
         this.allRecords = allRecords;
         this.expandedCriteria = state.criteria && expand(state.criteria);
     }
 
-    private filterRow(record: Record) : boolean {
+    private filterRow(record: State) : boolean {
         if (this.expandedCriteria !== undefined) {
-            if (Guards.isIRecord(record)) {
+            if (Guards.isRichField(record)) {
                 return apply(record.value, this.expandedCriteria, this.config?.value);
             } else {
                 return apply(record, this.expandedCriteria, this.config?.value);
@@ -392,17 +392,17 @@ class ViewEditor {
         }
     }
 
-    private compareRows(a: Record, b: Record) : number {
+    private compareRows(a: State, b: State) : number {
         if (this.state.sort) {
-            let fieldA =  Guards.isIRecord(a) ? a.value : a;
-            let fieldB = Guards.isIRecord(b) ? b.value : b;
+            let fieldA =  Guards.isRichField(a) ? a.value : a;
+            let fieldB = Guards.isRichField(b) ? b.value : b;
             return applySort(fieldA, fieldB, this.state.sort, this.config?.value);
         } else {
             return 0;
         }
     }
 
-    updateRow(key: string, value: Record /* record must already be merged with any existing data*/) : ViewEditor {
+    updateRow(key: string, value: State /* record must already be merged with any existing data*/) : ViewEditor {
         if (!this.state.criteria || this.filterRow(value)) {
             let keys = this.state.keys;
             let index = keys.indexOf(key);
@@ -430,7 +430,7 @@ class ViewEditor {
         return this;
     }
 
-    insertRow(key: string, value: Record /* record must already be merged with any existing data*/) : ViewEditor {
+    insertRow(key: string, value: State /* record must already be merged with any existing data*/) : ViewEditor {
         if (!this.state.criteria || this.filterRow(value)) {
             let keys = this.state.keys;
             if (this.state.sort) {
@@ -445,7 +445,7 @@ class ViewEditor {
         return this;
     }    
 
-    setRow(key: string, value: Record /* record must already be merged with any existing data*/) : ViewEditor {
+    setRow(key: string, value: State /* record must already be merged with any existing data*/) : ViewEditor {
         if (!this.state.criteria || this.filterRow(value)) {
             let keys = this.state.keys;
             if (keys.indexOf(key) >= 0) {
@@ -478,7 +478,7 @@ class ViewEditor {
         return this;
     }
 
-    setData(records : { [key: string] : Record}) {
+    setData(records : { [key: string] : State}) {
         this.allRecords = records;
         let keys = Object.keys(records);
         if (this.expandedCriteria) keys = keys.filter(key => this.filterRow(records[key]));
@@ -501,13 +501,13 @@ class RecordsetEditor extends BaseStateEditor<IRecordset> {
         );
     }
 
-    insertChild(head: KeyPart, record: Record): this {
+    insertChild(head: KeyPart, record: State): this {
         const key = head as string;
         if (this.state.records[key] !== undefined) throw new RangeError('attempt to insert with key that exists');
         return this.setChild(key, record);
     }
 
-    setChild(head: KeyPart, record: Record): this {
+    setChild(head: KeyPart, record: State): this {
         let recordset = this.state;
         let view = recordset.filter;
         const key = head as string;
@@ -538,7 +538,7 @@ class RecordsetEditor extends BaseStateEditor<IRecordset> {
         return this;
     }
 
-    getChild(key: KeyPart): Record {
+    getChild(key: KeyPart): State {
         return this.state.records[key as string];
     }
 
@@ -562,7 +562,7 @@ class RecordsetEditor extends BaseStateEditor<IRecordset> {
         // a Record is just a holder for whatever is in it, but it 'owns' the metadata
         const childState = this.getChild(head);
         const childConfig = getConfig(this.config, head);
-        return new RecordEditor(childConfig, childState as Record);
+        return new RecordEditor(childConfig, childState);
     }
 
     mergeMetadata(metadata: IMetadataCarrier): this {
@@ -579,7 +579,7 @@ class RecordsetEditor extends BaseStateEditor<IRecordset> {
         return this;
     }    
 
-    mergeRecords(a: { [ key: string] : Record }, b: { [ key: string] : Record }) : { [ key: string] : Record } {
+    mergeRecords(a: { [ key: string] : State }, b: { [ key: string] : State }) : { [ key: string] : State } {
 
         let result = { ...a }
 
@@ -601,7 +601,7 @@ class RecordsetEditor extends BaseStateEditor<IRecordset> {
 
     merge(recordset: IRecordset): this {
         let mergedMetadata: IMetadataCarrier;
-        let records: { [key: string] : Record};
+        let records: { [key: string] : State};
 
         mergedMetadata = mergeIMetadataCarrier(this.state, recordset);
         records = this.mergeRecords(this.state.records, recordset.records);
@@ -680,13 +680,13 @@ class PrimitiveEditor extends BaseStateEditor<NullablePrimitive> {
     }
 }
 
-class RecordEditor extends StateEditor<Record> {
+class RecordEditor extends StateEditor<State> {
 
     valueEditor: StateEditor<Field>;
 
-    constructor(config: Config | undefined, state: Record) {
+    constructor(config: Config | undefined, state: State) {
         super();
-        if (Guards.isIRecord(state)) {
+        if (Guards.isRichField(state)) {
             let { value, ...metadata } = state;
             this.valueEditor = edit(config, value, metadata) as StateEditor<Field>;
         } else {
@@ -730,7 +730,7 @@ class RecordEditor extends StateEditor<Record> {
         return this.valueEditor.getEditor(head);
     }
 
-    getState(): Record {
+    getState(): State {
         let metadata = this.valueEditor.getMetadata();
         if (metadata && !isEmpty(metadata)) {
             return {
@@ -738,7 +738,7 @@ class RecordEditor extends StateEditor<Record> {
                 value: this.valueEditor.getState()
             }
         } else {
-            return this.valueEditor.getState() as Record;
+            return this.valueEditor.getState() as State;
         }
 
     }
@@ -762,8 +762,8 @@ class RecordEditor extends StateEditor<Record> {
         return this;
     }
 
-    merge(record: Record): this {
-        if (Guards.isIRecord(record)) {
+    merge(record: State): this {
+        if (Guards.isRichField(record)) {
             this.valueEditor.merge(record.value);
             this.mergeMetadata(record);
         } else {
@@ -913,7 +913,7 @@ export function edit<T extends State>(config?: Config, state?: T, metadata?: IMe
     const type = getDataType(state, config);
     switch (type) {
         case DataType.RECORDSET: return new RecordsetEditor(config, <IRecordset> state) as unknown as StateEditor<T>;
-        case DataType.RECORD: return new RecordEditor(config, <Record>state) as unknown as StateEditor<T>;
+        case DataType.RECORD: return new RecordEditor(config, <State>state) as unknown as StateEditor<T>;
         case DataType.FIELDSET: return new FieldMappingEditor(config, <FieldMapping>state, metadata) as unknown as StateEditor<T>;
         case DataType.ARRAY: return new FieldArrayEditor(config, <FieldArray>state, metadata) as unknown as StateEditor<T>;
         case DataType.STRING:

@@ -1,4 +1,4 @@
-import { FieldMapping, FieldArray, State, IRecordset, Record, NullablePrimitive } from './state';
+import { FieldMapping, FieldArray, State, IRecordset, RichField, NullablePrimitive } from './state';
 import { DataType } from './datatype';
 import { StateEditor } from './editor';
 import { DateTime } from 'luxon';
@@ -27,7 +27,7 @@ export function validateArray(editor : StateEditor<FieldArray>) : void {
 export function validateRecordset(editor : StateEditor<IRecordset>) : void {
 }
 
-export function validateRecord(editor : StateEditor<Record>) : void {
+export function validateRecord(editor : StateEditor<RichField>) : void {
     editor.editAt([], validate);
 }
 
@@ -107,7 +107,7 @@ export function validate(editor: StateEditor<State>) {
             validateRecordset(editor as StateEditor<IRecordset>);
             break;
         case DataType.RECORD: 
-            validateRecord(editor as StateEditor<Record>);
+            validateRecord(editor as StateEditor<RichField>);
             break;
         case DataType.STRING: 
             validateString(editor as StateEditor<NullablePrimitive>);

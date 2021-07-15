@@ -1,6 +1,6 @@
 import { Dispatch, DataSource, DatasourceAction } from '../datasource';
 import { Accessor } from '../accessor';
-import { FieldMapping, Record, NullablePrimitive, IRecord } from '../state';
+import { FieldMapping, State, NullablePrimitive, RichField } from '../state';
 import { Key, KeyPart } from '../types';
 import { ErrorCode, Exception } from '../exceptions';
 import { Collection, Dexie, Table, IndexableType } from 'dexie';
@@ -105,7 +105,7 @@ export class DexieDatasource extends DataSource {
             if (StateGuards.isPrimitive(value)) 
                 result[key] = this.transformPrimitiveOut(value);
             else {
-                if (StateGuards.isIRecord(value)) {
+                if (StateGuards.isRichField(value)) {
                     result[key] = this.transformOut(value.value as FieldMapping);
                 } else {
                     result[key] = this.transformOut(value as FieldMapping);
@@ -131,7 +131,7 @@ export class DexieDatasource extends DataSource {
         };
     }
 
-    updateRecord(record : Record, key? : KeyPart) : DatasourceAction {
+    updateRecord(record : State, key? : KeyPart) : DatasourceAction {
         const table = databases.resolve("dexieDatabase").table(this.collectionName);
         const crecord = this.expand(record, key);
         if (crecord.metadata.key === undefined) return this.setError({ code: ErrorCode.KEY_REQUIRED, message: 'attempted to update a record with no key' });
@@ -151,9 +151,9 @@ export class DexieDatasource extends DataSource {
         };
     }
 
-    upsertRecord(record : Record, key? : KeyPart) : DatasourceAction {
+    upsertRecord(record : State, key? : KeyPart) : DatasourceAction {
         const table = databases.resolve("dexieDatabase").table(this.collectionName);
-        const crecord : IRecord = this.expand(record, key);
+        const crecord : RichField = this.expand(record, key);
         if (crecord.metadata.key === undefined) return this.setError({ code: ErrorCode.KEY_REQUIRED, message: 'attempted to update a record with no key' });
         return (dispatch: Dispatch, getState) => {
             return table.put(this.transformOut(crecord.value as FieldMapping) as FieldMapping, crecord.metadata.key as string | number).then(

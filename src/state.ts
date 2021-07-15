@@ -28,50 +28,58 @@ export type FieldArrayContent = Primitive | FieldMapping;
 
 export type FieldArray = FieldArrayContent[]
 
-export interface IRecord extends IMetadataCarrier {
+export interface RichField extends IMetadataCarrier {
     value: Field
 }
-
-export type Record = IRecord | Primitive 
 
 export interface Filter {
     keys: string[],
     criteria?: PackedCriteria,
     sort?: Sort
 }
+
+export type State = Field | RichField 
 export interface IRecordset extends IMetadataCarrier {
-    records: { [ key: string ] : Record },
+    records: { [ key: string ] : State },
     filter?: Filter
 }
 
-export type State = Field | Record 
+export function toField(state: State) : Field {
+    return Guards.isRichField(state) ? state.value : state; 
+}
 
 export class Guards {
 
-    static isIRecord(state?: State): state is IRecord {
-        return (state as IRecord)?.value !== undefined;
+    static isRichField(state?: State): state is RichField {
+        const iRecord = state as RichField;
+        return iRecord?.value !== undefined && iRecord?.metadata !== undefined;
     }
 
-    static isRecord(state?: State): state is Record {
-        return Guards.isIRecord(state) || Guards.isPrimitive(state);
+    static isIRecordset(state?: State): state is IRecordset {
+        const iRecordset = state as IRecordset;
+        return iRecordset?.records !== undefined && iRecordset?.metadata !== undefined;
     }
 
-    static isString(state?: State): state is Primitive {
+    static isIMetadataCarrier(state?: State): state is IMetadataCarrier & State {
+        return Guards.isRichField(state) || Guards.isIRecordset(state);
+    }
+
+    static isString(state?: State): state is string {
         const type = typeof state;
         return (type === 'string');
     }
 
-    static isReference(state?: State): state is Primitive {
+    static isReference(state?: State): state is string {
         const type = typeof state;
         return (type === 'string');
     }
 
-    static isNumber(state?: State): state is Primitive {
+    static isNumber(state?: State): state is number {
         const type = typeof state;
         return (type === 'number');
     }
 
-    static isDateTime(state?: State): state is Primitive {
+    static isDateTime(state?: State): state is DateTime {
         return DateTime.isDateTime(state);
     }
 
@@ -84,16 +92,8 @@ export class Guards {
         return state === null || this.isPrimitive(state);
     }
 
-    static isIRecordset(state?: State): state is IRecordset {
-        return (state as IRecordset)?.records !== undefined;
-    }
-
-    static isIMetadataCarrier(state?: State): state is IMetadataCarrier & State {
-        return Guards.isIRecord(state) || Guards.isIRecordset(state);
-    }
-
-    static isFieldMapping(field: Field) : field is FieldMapping {
-        return !this.isNullablePrimitive(field) && !this.isIRecordset(field) && !Array.isArray(field);
+    static isFieldMapping(state?: State) : state is FieldMapping {
+        return typeof state === 'object' && !this.isIMetadataCarrier(state);
     }
 }
 

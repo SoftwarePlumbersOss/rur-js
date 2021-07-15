@@ -25,11 +25,11 @@ describe('get datatype from State without config', ()=>{
     });
 
     it('gets datatype for an IRecordset', () => {
-        expect(getDataType({ records: [] })).toBe(DataType.RECORDSET);
+        expect(getDataType({ records: [], metadata: {} })).toBe(DataType.RECORDSET);
     });
 
     it('gets datatype for an IRecord', () => {
-        expect(getDataType({ value: 213 })).toBe(DataType.RECORD);
+        expect(getDataType({ value: 213, metadata: {}})).toBe(DataType.RECORD);
     });
     
 })
@@ -61,12 +61,16 @@ describe('get datatype from State with config', ()=>{
         expect(getDataType([], getConfig(config,'*','fieldThree'))).toBe(DataType.ARRAY);
     });
 
-    it('gets datatype for a record', () => {
+    it('gets datatype for a fieldsset', () => {
         expect(getDataType({ value: 123 }, getConfig(config,'*'))).toBe(DataType.FIELDSET);
     });
 
     it('gets datatype for an IRecordset', () => {
-        expect(getDataType({ records: [] }, getConfig(config))).toBe(DataType.RECORDSET);
+        expect(getDataType({ records: {}, metadata: {} }, getConfig(config))).toBe(DataType.RECORDSET);
+    });
+
+    it('gets value datatype for an IRecord', () => {
+        expect(getDataType({ value: {}, metadata: {} }, getConfig(config, '*'))).toBe(DataType.FIELDSET); //yes, not RECORD
     });
 
     it('throws a TypeError when config and state disagree', () => {

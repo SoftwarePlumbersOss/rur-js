@@ -27,7 +27,7 @@ export function getDataType(state?: State, config?: Config) : DataType {
             if (Guards.isPrimitive(state)) throw new TypeError(`State does not match configured type ${config.type}`)
             return config.type;
         case DataType.RECORD:
-            if (!Guards.isRecord(state)) throw new TypeError(`State does not match configured type ${config.type}`)
+            // Any state can be a record
             return config.type;
         case DataType.REFERENCE:
             if (!Guards.isReference(state)) throw new TypeError(`State does not match configured type ${config.type}`)
@@ -58,7 +58,7 @@ export function getDataType(state?: State, config?: Config) : DataType {
                         return DataType.ARRAY;
                     else if (Guards.isIRecordset(state))
                         return DataType.RECORDSET;
-                    else if (Guards.isRecord(state))
+                    else if (Guards.isRichField(state))
                         return DataType.RECORD;
                     else
                         return DataType.FIELDSET;

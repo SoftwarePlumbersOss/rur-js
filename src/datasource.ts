@@ -2,8 +2,8 @@ import { ThunkAction, ThunkDispatch } from 'redux-thunk';
 import { AnyAction } from 'redux';
 import { v4 as uuid } from 'uuid';
 
-import { Accessor, Datum, Calculator } from './accessor';
-import { FieldMapping, Record, IRecord, Guards } from './state';
+import { Accessor, DatumOut, Calculator } from './accessor';
+import { FieldMapping, State, RichField, Guards } from './state';
 import { Key, KeyPart } from './types';
 import { ErrorCode, Exception } from './exceptions';
 import { Config } from './config';
@@ -21,8 +21,8 @@ export class DataSource {
         this.accessor = accessor;
     }
 
-    expand(record: Record, key? : KeyPart) : IRecord {
-        if (Guards.isIRecord(record)) {
+    expand(record: State, key? : KeyPart) : RichField {
+        if (Guards.isRichField(record)) {
             if (key)
                 return { ...record, metadata: { ...record.metadata, key }};
             else
@@ -54,7 +54,7 @@ export class DataSource {
         return this.thunkify(this.accessor.addValue({ value: record, metadata: { key: uuid().toString() }}));
     }
 
-    updateRecord(record : Record, key? : KeyPart) : DatasourceAction {
+    updateRecord(record : State, key? : KeyPart) : DatasourceAction {
         const irecord = this.expand(record, key);
         if (irecord.metadata.key !== undefined) {
             return this.thunkify(this.accessor.updateValue(irecord, irecord.metadata.key as string));
@@ -67,7 +67,7 @@ export class DataSource {
         return this.thunkify(this.accessor.removeValue(key));
     }
 
-    get(state: any, ...key : Key) : Datum {
+    get(state: any, ...key : Key) : DatumOut {
         return this.accessor.get(state, ...key);
     }
     

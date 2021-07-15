@@ -1,5 +1,5 @@
 import { Config } from './config';
-import { State, Record, NullablePrimitive,  IMetadataCarrier, MetadataPrimitive, Field, FieldArrayContent } from './state';
+import { State, Metadata, MetadataPrimitive, Field, FieldArrayContent } from './state';
 import { validate } from './validation';
 import { Key } from './types'; 
 import { StateEditor, edit } from './editor';
@@ -30,16 +30,17 @@ export interface Action {
 export interface ValueAction extends Action {
     value: Field
 }
-
+export interface MetadataAction extends Action {
+    metadata: Metadata
+}
+export interface CombinedAction extends ValueAction, MetadataAction {
+}
 export interface MetadataValueAction extends Action {
     metaValue: MetadataPrimitive
 }
 export interface RowAction extends Action {
     row: FieldArrayContent
 }
-export interface MetadataAction extends Action, IMetadataCarrier {
-}
-
 export interface SearchAction extends Action {
     criteria: PackedCriteria
 }
@@ -87,6 +88,8 @@ export function reduce(state: any, action: Action) : any {
         case ActionType.setValue: 
             if (!Guards.isValueAction(action)) throw new TypeError("wrong type for action");
             editor.set(action.key, action.value);
+            if (Guards.isMetadataAction(action)) 
+            editor.mergeMetadata(action);
             break;
         case ActionType.setMetadata: 
             if (!Guards.isMetadataValueAction(action)) throw new TypeError("wrong type for action");
