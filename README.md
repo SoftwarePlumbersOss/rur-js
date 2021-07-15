@@ -39,7 +39,7 @@ _recomposable_ way to access and update this data. Given an accessor object and 
 ```javascript
 accessor.get(state, 'stepOne', 'user', 'firstName'); 
 accessor.get(state).get('stepOne').get('user').get('firstName');
-accessor.get('stepOne').get('user').get('firstName').get('state'); 
+accessor.get('stepOne').get('user').get('firstName').get(state); 
 ```
 
 will all return the exact same information. When it comes to updating this data:
@@ -79,7 +79,7 @@ error associated with the given field. This operation can also be recomposed:
 
 ```javascript
 accessor.get(state).get('stepOne').get('user').get('firstName').getMetadata('error');
-accessor.get('stepOne').get('user').get('firstName').getMetadata('state','error'); 
+accessor.get('stepOne').get('user').get('firstName').getMetadata(state,'error'); 
 ```
 
 Information about what can be retrieved from a node is always available via recomposable operations
