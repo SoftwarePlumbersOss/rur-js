@@ -1,6 +1,6 @@
 import { Dispatch, DataSource, DatasourceAction } from '../datasource';
 import { Accessor } from '../accessor';
-import { FieldMapping, Record, NullablePrimitive, Field } from '../state';
+import { FieldMapping, Record, NullablePrimitive, IRecord } from '../state';
 import { Key, KeyPart } from '../types';
 import { ErrorCode, Exception } from '../exceptions';
 import { Collection, Dexie, Table, IndexableType } from 'dexie';
@@ -153,12 +153,12 @@ export class DexieDatasource extends DataSource {
 
     upsertRecord(record : Record, key? : KeyPart) : DatasourceAction {
         const table = databases.resolve("dexieDatabase").table(this.collectionName);
-        const crecord = this.expand(record, key);
+        const crecord : IRecord = this.expand(record, key);
         if (crecord.metadata.key === undefined) return this.setError({ code: ErrorCode.KEY_REQUIRED, message: 'attempted to update a record with no key' });
         return (dispatch: Dispatch, getState) => {
             return table.put(this.transformOut(crecord.value as FieldMapping) as FieldMapping, crecord.metadata.key as string | number).then(
                 key => {
-                    dispatch(this.accessor.upsertValue(crecord, key as number));
+                    dispatch(this.accessor.insertValue(crecord.value, key as number));
                     const exception = this.accessor.getError(getState())
                     if (exception)
                         return Promise.reject(exception);
@@ -221,7 +221,7 @@ export class DexieDatasource extends DataSource {
         return (dispatch: Dispatch, getState) => {
             return collection.each((row, cursor) => {                    
                 const key = this.transformPrimitiveIn(cursor.primaryKey as string) as string;
-                dispatch(this.accessor.upsertValue({ value: this.transformIn(row), metadata: { key } }, key))
+                dispatch(this.accessor.insertValue({ value: this.transformIn(row) }, key))
             })
         };        
     }

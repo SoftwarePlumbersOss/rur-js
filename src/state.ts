@@ -35,7 +35,7 @@ export interface IRecord extends IMetadataCarrier {
     value: Field
 }
 
-export type Record = IRecord | Primitive
+export type Record = IRecord | Primitive 
 
 export interface Filter {
     keys: string[],

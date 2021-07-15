@@ -14,7 +14,7 @@ export enum ActionType {
     addValue = "RUR_ADD_VALUE",
     updateValue = "RUR_UPDATE_VALUE",
     upsertValue = "RUR_UPSERT_VALUE",
-    removeValue = "RUR_REMOVE_VALUE",
+    delete = "RUR_REMOVE_VALUE",
     validate = "RUR_VALIDATE",
     search = "RUR_SEARCH",
     sort = "RUR_SORT",
@@ -104,7 +104,7 @@ export function reduce(state: any, action: Action) : any {
             if (!Guards.isRowAction(action)) throw new TypeError("wrong type for action");
             editor.addAt(action.key, action.row);
             break;                    
-        case ActionType.removeValue:
+        case ActionType.delete:
             editor.deleteAt(action.key);
             break;
         case ActionType.validate:

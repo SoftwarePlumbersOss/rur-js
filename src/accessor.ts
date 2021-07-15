@@ -1,10 +1,10 @@
 import { DataType, getDataType } from './datatype';
-import { State, Guards as StateGuards, IRecordset, Record, NullablePrimitive, Field, IMetadata, IMetadataCarrier, FieldMapping, MetadataPrimitive, FieldArray, FieldArrayContent } from './state';
+import { State, Guards as StateGuards, IRecordset, Record, NullablePrimitive, Field, Metadata, IMetadata, IMetadataCarrier, FieldMapping, MetadataPrimitive, FieldArray, FieldArrayContent } from './state';
 import { Config, getConfig } from './config';
 import { ReferenceBoundary, Exception } from './exceptions';
 import { Action, ActionType, MetadataAction, ValueAction, RowAction, MetadataValueAction, SearchAction } from './reducer';
 import { Key, KeyPart } from './types';
-import { Guards, PackedCriteria } from './criteria';
+import { PackedCriteria } from './criteria';
 import getRegistry from "./registry"
 
 
@@ -16,7 +16,19 @@ function logReturn(name: string, value: any) : any {
 function logEntry(name: string, ...value : any) {
     //console.log(`entering ${name}`, ...value);
 }
-export type Datum = NullablePrimitive | View | undefined;
+
+export type DatumOut = NullablePrimitive | View | undefined;
+
+export type RichField = { value: Field, metadata: Metadata }
+
+export type DatumIn = Field | RichField
+
+export class Guards {
+    static isRichField(datum : DatumIn) : datum is RichField {
+        const richDatum = datum as RichField;
+        return richDatum.metadata !== undefined && richDatum.value !== undefined;
+    }
+}
 
 export class View {
     protected accessor : Accessor;
@@ -29,11 +41,11 @@ export class View {
         this.path = path;
     }
 
-    get(...key : Key) : Datum {
+    get(...key : Key) : DatumOut {
         return this.accessor.getRoot(this.state, ...this.path, ...key);
     }
 
-    getMetadata(...key : Key) : NullablePrimitive | undefined {
+    getMetadata(...key : Key) : MetadataPrimitive | undefined {
         return this.accessor.getMetadata(this.state, ...this.path, ...key);
     }    
 
@@ -56,28 +68,28 @@ export abstract class Accessor {
         this.parent = parent;
     }
 
-    static keys(datum : Datum) : Iterable<KeyPart> {
+    static keys(datum : DatumOut) : Iterable<KeyPart> {
         return (datum instanceof View) ? datum.keys() : [];
     }
 
-    abstract get(state: any, ...key : Key) : Datum
-    abstract getMetadata(state: any, ...key: Key) : NullablePrimitive | undefined
+    abstract get(state: any, ...key : Key) : DatumOut
+    abstract getMetadata(state: any, ...key: Key) : MetadataPrimitive | undefined
     abstract getConfig(...key : Key) : Config | undefined
     abstract setParent(parent : Accessor) : Accessor;
     abstract keys(state: any, ...key: Key) : Iterable<KeyPart>;
 
-    abstract set(value : NullablePrimitive, ...key: Key) : ValueAction
+    abstract set(value : DatumIn, ...key: Key) : ValueAction
     abstract setMetadata(value : MetadataPrimitive, ...key: Key) : MetadataValueAction
     abstract mergeMetadata(value : IMetadata, ...key: Key) : MetadataAction
     abstract insertValue(value : Field, ...key: Key) : ValueAction
     abstract removeValue(...key: Key) : Action
-    abstract addValue(value : FieldArrayContent, ...key: Key) : RowAction
-    abstract updateValue(value : Field, ...key: Key) : ValueAction
+    abstract addValue(value : DatumIn, ...key: Key) : RowAction
+    abstract updateValue(value : DatumIn, ...key: Key) : ValueAction
     abstract validate(metadata: IMetadataCarrier, ...key: Key) : MetadataAction
     abstract setError(Exception: Exception, ...key: Key) : MetadataAction
     abstract search(criteria : PackedCriteria, ...key: Key) : SearchAction
 
-    getRoot(state : State, ...key : Key) : Datum {
+    getRoot(state : State, ...key : Key) : DatumOut {
         if (this.parent) 
             return this.parent.getRoot(state, ...key);
         else 
@@ -244,7 +256,7 @@ export abstract class Accessor {
     }    
     
 
-    get(state : any, ...key : Key) : Datum {
+    get(state : any, ...key : Key) : DatumOut {
         logEntry("BaseAccessor.get", key);
         const base = this.getBaseState(state);
         let value : State | undefined;
@@ -283,8 +295,12 @@ export abstract class Accessor {
         }
     }
 
-    set(value: NullablePrimitive, ...key : Key) : ValueAction {
-        return { type: ActionType.setValue, config: this.config, base: this.basePath, key, value };
+    set(value: DatumIn, ...key : Key) : ValueAction {
+        if (Guards.isRichField(value)) {
+            return { ...value, type: ActionType.setValue, config: this.config, base: this.basePath, key };
+        } else {
+            return { type: ActionType.setValue, config: this.config, base: this.basePath, key, value };
+        }
     }
 
     setMetadata(metaValue: MetadataPrimitive, ...key : Key) : MetadataValueAction {
@@ -308,7 +324,7 @@ export abstract class Accessor {
     }
 
     removeValue(...key : Key) : Action {
-        return { type: ActionType.removeValue, config: this.config, base: this.basePath, key };
+        return { type: ActionType.delete, config: this.config, base: this.basePath, key };
     }
 
     addValue(row: FieldArrayContent, ...key : Key) : RowAction {
@@ -327,11 +343,11 @@ export abstract class Accessor {
         return getConfig(this.config, ...key);
     }
 
-    getMetadata(state : any, ...key : Key) : NullablePrimitive | undefined {
+    getMetadata(state : any, ...key : Key) : MetadataPrimitive | undefined {
         logEntry("BaseAccessor.getMetadata", key);
         if (key.length < 0) throw new RangeError('Metadata key must be nonzero length');
         const base = this.getBaseState(state);
-        let result : NullablePrimitive | undefined;
+        let result : MetadataPrimitive | undefined;
         try {
             const metadataParent = key.slice(0,-1);
             let carrier = this.getMetadataCarrier(state, base, this.config, ...metadataParent);

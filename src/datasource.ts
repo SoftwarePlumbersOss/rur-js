@@ -63,15 +63,6 @@ export class DataSource {
         }
     }
 
-    upsertRecord(record : Record, key? : KeyPart) : DatasourceAction {
-        const irecord = this.expand(record, key);
-        if (irecord.metadata.key !== undefined) {
-            return this.thunkify(this.accessor.upsertValue(irecord, irecord.metadata.key as string));
-        } else {
-            return this.setError({ code: ErrorCode.KEY_REQUIRED, message: 'attempted to upsert a record with no key' });
-        }
-    }
-
     removeRecord(key : KeyPart) : DatasourceAction {
         return this.thunkify(this.accessor.removeValue(key));
     }
