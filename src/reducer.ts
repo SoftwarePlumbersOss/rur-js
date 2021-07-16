@@ -112,7 +112,6 @@ export function reduce(state: any, action: Action) : any {
             break;
         case ActionType.validate:
             if (!Guards.isMetadataAction(action)) throw new TypeError("wrong type for action");
-            editor.mergeMetadataAt(action.key, action);
             editor.editAt(action.key, validate);
             break;
         case ActionType.search:

@@ -6,7 +6,10 @@ import { Action, ActionType, MetadataAction, ValueAction, RowAction, MetadataVal
 import { Key, KeyPart } from './types';
 import { PackedCriteria } from './criteria';
 import getRegistry from "./registry"
+import { ThunkAction, ThunkDispatch } from 'redux-thunk';
 
+export type AsyncAction<T extends Action> = ThunkAction<Promise<void>, any, undefined, T>;
+export type Dispatch = ThunkDispatch<any, undefined, any>;
 
 function logReturn(name: string, value: any) : any {
     //console.log(`exiting ${name}`, value);
@@ -57,7 +60,7 @@ export class View {
 }
 
 export type Calculator = (accessor : ((...key : Key) => NullablePrimitive | View | undefined), ...path : Key) => NullablePrimitive | undefined
-
+export type Validator = (accessor : DatumOut, ...path : Key) => IMetadataCarrier | Metadata | undefined
 export abstract class Accessor {
 
     protected parent?: Accessor
@@ -83,7 +86,7 @@ export abstract class Accessor {
     abstract removeValue(...key: Key) : Action
     abstract addValue(value : DatumIn, ...key: Key) : RowAction
     abstract updateValue(value : DatumIn, ...key: Key) : ValueAction
-    abstract validate(metadata: IMetadataCarrier, ...key: Key) : MetadataAction
+    abstract validate(...key: Key) : Action | AsyncAction<Action>
     abstract setError(Exception: Exception, ...key: Key) : MetadataAction
     abstract search(criteria : PackedCriteria, ...key: Key) : SearchAction
 
@@ -309,8 +312,8 @@ export abstract class Accessor {
         return { type: ActionType.setMetadata, config: this.config, base: this.basePath, key, metadata: { error : value } };
     }    
 
-    validate(value: IMetadataCarrier, ...key : Key) : MetadataAction {
-        return { ...value, type: ActionType.validate, config: this.config, base: this.basePath, key };
+    validate(...key : Key) : Action {
+        return { type: ActionType.validate, config: this.config, base: this.basePath, key };
     }
 
     mergeMetadata(metadata: IMetadataCarrier, ...key : Key) : MetadataAction {
@@ -406,8 +409,8 @@ export abstract class DelegatingAccessor extends Accessor {
         return this.accessor.mergeMetadata(metadata, ...key);
     }      
 
-    validate(metadata: IMetadataCarrier, ...key : Key) : MetadataAction {
-        return this.accessor.validate(metadata, ...key);
+    validate(...key : Key) : Action | AsyncAction<Action> {
+        return this.accessor.validate(...key);
     }      
 
     insertValue(value: Field, ...key : Key) : ValueAction {
@@ -456,6 +459,34 @@ export class CalculatedFieldsAccessor extends DelegatingAccessor {
 
     setParent(parent : Accessor) {
         return new CalculatedFieldsAccessor(this.accessor, this.calculator, parent);
+    }
+}
+
+export class ValidatingAccessor extends DelegatingAccessor {
+
+    validator : Validator
+
+    constructor(accessor : Accessor, validator : Validator, parent? : Accessor) {
+        super(accessor, parent);
+        this.validator = validator;
+    }
+
+    validate(...key : Key) : AsyncAction<Action> {
+        return (dispatch : Dispatch, getState : () => any) => {
+            let metadata = this.validator(this.get(getState(), ...key), ...key);
+            if ((metadata as any)?.metadata) {
+                dispatch(this.accessor.mergeMetadata(metadata as IMetadataCarrier))
+            } else if (metadata) {
+                dispatch(this.accessor.mergeMetadata({ metadata : metadata as Metadata}))
+            } else {
+                dispatch(this.accessor.validate(...key));
+            }
+            return Promise.resolve();
+        }
+    }      
+
+    setParent(parent : Accessor) {
+        return new ValidatingAccessor(this.accessor, this.validator, parent);
     }
 }
 
