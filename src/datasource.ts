@@ -1,85 +1,82 @@
-import { ThunkAction, ThunkDispatch } from 'redux-thunk';
-import { AnyAction } from 'redux';
-import { v4 as uuid } from 'uuid';
 
-import { Accessor, DatumOut, Calculator } from './accessor';
-import { FieldMapping, State, RichField, Guards } from './state';
-import { Key, KeyPart } from './types';
-import { ErrorCode, Exception } from './exceptions';
+import { Accessor, BaseAccessor, AsyncAction, AddAction, Dispatch, DelegatingAccessor } from './accessor';
+import { FieldMapping } from './state';
+import { KeyPart } from './types';
 import { Config } from './config';
 import { PackedCriteria } from './criteria';
+import { Action, ValueAction, SearchAction } from './reducer';
+import getRegistry from './registry';
 
-export type DatasourceAction = ThunkAction<Promise<void>, any, undefined, AnyAction>;
+export abstract class Collection {    
+    abstract insertValue(value: FieldMapping, key : KeyPart) : Promise<void>;
+    abstract updateValue(value: FieldMapping, key : KeyPart) : Promise<void>;
+    abstract removeValue(key : KeyPart) : Promise<void>;
+    abstract addValue(value: FieldMapping) : Promise<KeyPart>;
+    abstract search(criteria: PackedCriteria) : Promise<{[ key: string] : FieldMapping}>;
+}
 
-export type Dispatch = ThunkDispatch<any, undefined, AnyAction>;
+export abstract class Driver {
+    abstract getCollection(collectionName: string, config: Config) : Collection;
+}
 
-export class DataSource {
+const drivers = getRegistry(Driver);
 
-    accessor: Accessor;
+/** A DataSource is just an Accessor which can only update top-level items. 
+ * 
+ */
+export abstract class DataSource extends DelegatingAccessor {
 
-    constructor(accessor: Accessor) {
-        this.accessor = accessor;
+    constructor(config : Config, basePath: string[], parent? : Accessor) {
+        super(new BaseAccessor(config, basePath), parent);
     }
 
-    expand(record: State, key? : KeyPart) : RichField {
-        if (Guards.isRichField(record)) {
-            if (key)
-                return { ...record, metadata: { ...record.metadata, key }};
-            else
-                return record;
-        } else {
-            return { value: record, metadata: { key }}
+    get collection() : Collection {
+        const config = this.getConfig("datasource");
+        if (config === undefined) throw new Error("No config");
+        const { driverName, collectionName, ...rest } = config;
+        return drivers.resolve(driverName).getCollection(collectionName, rest);
+    }
+
+    insertValue(value: FieldMapping, key : KeyPart) : AsyncAction<ValueAction> {
+        return (dispatch : Dispatch) => {            
+            return this.collection.insertValue(value, key).then(()=>{
+                const result = dispatch(this.accessor.insertValue(value, key));
+                if (result instanceof Promise) return result;
+            });
         }
-    }
+    }  
 
-    setError(exception : Exception) : DatasourceAction {
-        return (dispatch : Dispatch) => {
-            dispatch(this.accessor.setError(exception));
-            return Promise.reject(exception);
+    updateValue(value: FieldMapping, key : KeyPart) : AsyncAction<ValueAction> {
+        return (dispatch : Dispatch) => {            
+            return this.collection.updateValue(value, key).then(()=>{
+                const result = dispatch(this.accessor.updateValue(value, key));
+                if (result instanceof Promise) return result;
+            });
         }
-    }
+    }  
 
-    thunkify(action: AnyAction) : DatasourceAction {
-        return (dispatch : Dispatch, getState : () => any) => {
-            dispatch(action);
-            const exception = this.accessor.getError(getState())
-            if (exception)
-                return Promise.reject(exception);
-            else
-                return Promise.resolve();
+    removeValue(key : KeyPart) : AsyncAction<Action> {
+        return (dispatch : Dispatch) => {            
+            return this.collection.removeValue(key).then(()=>{
+                const result = dispatch(this.accessor.removeValue(key));
+                if (result instanceof Promise) return result;
+            });
         }
-    }
+    }  
 
-    addRecord(record : FieldMapping) : DatasourceAction {
-        return this.thunkify(this.accessor.addValue({ value: record, metadata: { key: uuid().toString() }}));
-    }
+    addValue(value: FieldMapping) : AddAction {
+        return (dispatch : Dispatch) => {            
+            return this.collection.addValue(value).then((key)=>{
+                return Promise.resolve(dispatch(this.accessor.insertValue(value, key))).then(()=>key);
+            });
+        };
+    }  
 
-    updateRecord(record : State, key? : KeyPart) : DatasourceAction {
-        const irecord = this.expand(record, key);
-        if (irecord.metadata.key !== undefined) {
-            return this.thunkify(this.accessor.updateValue(irecord, irecord.metadata.key as string));
-        } else {
-            return this.setError({ code: ErrorCode.KEY_REQUIRED, message: 'attempted to update a record with no key' });
-        }
-    }
-
-    removeRecord(key : KeyPart) : DatasourceAction {
-        return this.thunkify(this.accessor.removeValue(key));
-    }
-
-    get(state: any, ...key : Key) : DatumOut {
-        return this.accessor.get(state, ...key);
-    }
-    
-    getConfig(...key: Key) : Config | undefined {
-        return this.accessor.getConfig(...key);
-    }
-
-    addCalculatedFields(calculator : Calculator) : DataSource {
-        return new DataSource(this.accessor.addCalculatedFields(calculator));
-    }
-
-    search(criteria : PackedCriteria) : DatasourceAction {
-        return this.thunkify(this.accessor.search(criteria));
+    search(criteria: PackedCriteria) : AsyncAction<SearchAction> {
+        return (dispatch : Dispatch) => {            
+            return this.collection.search(criteria).then((result)=>{
+                dispatch(this.accessor.mergeValue(result));
+            });
+        };
     }
 }

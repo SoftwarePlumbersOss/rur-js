@@ -9,6 +9,11 @@ import { edit, editRecord } from './factory';
 import { Guards } from './guards';
 import { ViewEditor } from './view';
 
+// Note: I'd love to break this into separate files for each class, but there a cyclic dependency since
+// the edit function in factory needs to be able to create instances of all different subtypes of StateEditor and the
+// subclasses in here all use the factory. I was not able to resolve the issues created by this. Gosh, the javascript
+// ecosystem sucks quite badly sometimes.
+
 export abstract class StateEditor<T extends State> {
 
     /** Get a direct child of this state element,
@@ -221,6 +226,10 @@ export abstract class StateEditor<T extends State> {
         } else {
             throw new RangeError('key should have a length of at least 1');
         }
+    }
+
+    mergeAt(key: Key, value: State): this {
+        return this.editAt(key, editor => editor.merge(value));
     }
 
     addAt(key: Key, value: State): this {

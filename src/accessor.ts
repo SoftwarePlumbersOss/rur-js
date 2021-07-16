@@ -3,12 +3,14 @@ import { State, Guards as StateGuards, IRecordset, RichField, NullablePrimitive,
 import { Config, getConfig } from './config';
 import { ReferenceBoundary, Exception } from './exceptions';
 import { Action, ActionType, MetadataAction, ValueAction, RowAction, MetadataValueAction, SearchAction } from './reducer';
-import { Key, KeyPart } from './types';
+import { Key, KeyPart, Guards as KeyGuards } from './types';
 import { PackedCriteria } from './criteria';
 import getRegistry from "./registry"
 import { ThunkAction, ThunkDispatch } from 'redux-thunk';
+import { state } from '../test/testdata';
 
 export type AsyncAction<T extends Action> = ThunkAction<Promise<void>, any, undefined, T>;
+export type AddAction = ThunkAction<Promise<KeyPart>, any, undefined, RowAction>;
 export type Dispatch = ThunkDispatch<any, undefined, any>;
 
 function logReturn(name: string, value: any) : any {
@@ -20,8 +22,10 @@ function logEntry(name: string, ...value : any) {
     //console.log(`entering ${name}`, ...value);
 }
 
+/** Represents possible return values from a 'get' operation on an accessor */
 export type DatumOut = NullablePrimitive | View | undefined;
 
+/** Represents possible input values for a 'set' operation on an accessor */
 export type DatumIn = Field | RichField
 
 export class Guards {
@@ -31,6 +35,13 @@ export class Guards {
     }
 }
 
+/** Represents a live view over some aggregate (...Recordset, Array, or FieldMapping).
+ * 
+ * 'get' operations on an accessor return a primitive (string, number, DateTime) or a View. This preserves
+ * the immutablilty of the underlying state, since set operations on a view return dispatchable actions
+ * rather than directly mutating the state,
+ * 
+ */
 export class View {
     protected accessor : Accessor;
     protected state : any;
@@ -48,7 +59,11 @@ export class View {
 
     getMetadata(...key : Key) : MetadataPrimitive | undefined {
         return this.accessor.getMetadata(this.state, ...this.path, ...key);
-    }    
+    }
+
+    set(value : DatumIn, ...key: Key) : ValueAction | AsyncAction<ValueAction> {
+        return this.accessor.set(value, ...this.path, ...key);
+    }
 
     keys() : Iterable<KeyPart> {
         return this.accessor.keys(this.state, ...this.path);
@@ -59,8 +74,24 @@ export class View {
     }
 }
 
+/** A Calculator function can be used to add calculated fields to an accessor */
 export type Calculator = (accessor : ((...key : Key) => NullablePrimitive | View | undefined), ...path : Key) => NullablePrimitive | undefined
+
+/** A Validator function can be used to add custom validations to an accessor */
 export type Validator = (accessor : DatumOut, ...path : Key) => IMetadataCarrier | Metadata | undefined
+
+/** The main Accessor class.
+ * 
+ * Accessors are used to represent immutable state data in a recomposable manner:
+ * 
+ * accessor.get(state, "recordA", "fieldB") returns the value of fieldB in record A from the state
+ * accessor.get("recordA").get("fieldB").get(state) returns the same thing.
+ * accessor.set("jonathan","recordA","fieldB") returns a dispatchable action to set the value of field B to "jonathan"
+ * accessor.get("recordA").set("jonathan","fieldB") returns the same thign.
+ * 
+ * Thus an accessor can be used by a parent control to pass both state and the actions required to update
+ * that state to some child control.
+ */
 export abstract class Accessor {
 
     protected parent?: Accessor
@@ -73,22 +104,107 @@ export abstract class Accessor {
         return (datum instanceof View) ? datum.keys() : [];
     }
 
+    /** Get method.
+     * 
+     * if state is provided, a View on an aggregate data item or a Primitive. Otherwise an accessor which can retrieve that item given state.
+     * 
+     * Fundamentally, get(state, ...path) === get(...path).get(state)
+     * 
+     * @param state the redux state OR the first KeyPart in a key
+     * @param key a number of key parts specifying a path to some data item
+     * @return a View on an aggregate data item or a Primitive, OR an accessor which can retrieve the same thing.
+     */
+    abstract get(head: KeyPart, ...tail: Key) : Accessor;
     abstract get(state: any, ...key : Key) : DatumOut
+    abstract get(state: any, ...key : Key) : DatumOut | Accessor;
+
     abstract getMetadata(state: any, ...key: Key) : MetadataPrimitive | undefined
     abstract getConfig(...key : Key) : Config | undefined
     abstract setParent(parent : Accessor) : Accessor;
     abstract keys(state: any, ...key: Key) : Iterable<KeyPart>;
 
-    abstract set(value : DatumIn, ...key: Key) : ValueAction
+    /** Set method.
+     * 
+     * Create a dispatchable action which updates the data at some path. Should be an 'upsert' operation, in
+     * that a new data item should be created at that point in the path if one does not previously exist.
+     * 
+     * Fundamentally, set(state, ...path) === get(...path).set(state)
+     * 
+     * Errors can be handled two ways. For Async actions, the action may ultimately reject the returned promise with an
+     * error (which should typically conform to the Exception interface defined in this module). For synchronous
+     * actions, getMetadata(state, ...path, "error") should return an object conforming to the Exception
+     * interface if some error occurred during the processing of a set(state, ...path) action.
+     * 
+     * @param value a new value to be stored at the given location
+     * @param key a number of key parts specifying a path to some data item
+     * @return an action which may be dispatched to perform the update.
+     */    
+    abstract set(value : DatumIn, ...key: Key) : ValueAction | AsyncAction<ValueAction>
     abstract setMetadata(value : MetadataPrimitive, ...key: Key) : MetadataValueAction
     abstract mergeMetadata(value : IMetadataCarrier, ...key: Key) : MetadataAction
-    abstract insertValue(value : Field, ...key: Key) : ValueAction
-    abstract removeValue(...key: Key) : Action
-    abstract addValue(value : DatumIn, ...key: Key) : RowAction
-    abstract updateValue(value : DatumIn, ...key: Key) : ValueAction
+
+    /** Insert method.
+     * 
+     * Similar to set, except specifically creates a new value and for map-like items (Recordsets and FieldMappings)
+     * it should fail (updating error metadata or rejecting a promise) where an item already exists at the location
+     * indicated by the last KeyPart in the key.
+     * 
+     * For an array, it will insert an item at the location specified by the final KeyPart, expanding the size of the
+     * array.
+     * 
+     * @param value a new value to be stored at the given location
+     * @param key a number of key parts specifying a path to some data item
+     * @return an action which may be dispatched to perform the update.
+     */
+    abstract insertValue(value : Field, ...key: Key) : ValueAction | AsyncAction<ValueAction>  
+    abstract removeValue(...key: Key) : Action | AsyncAction<Action>
+
+    /** Add method for new array items and other aggregate items supporting auto-generated keys.
+     * 
+     * Adds an item to an aggregate. Key specifies the aggregate to which we are adding the new item. This
+     * should always work for an array (it will add the item to the end of the array and return the index
+     * of the new item). May throw a TypeError for other types of collection; it depends on whether the
+     * collection supports auto-generation of keys. 
+     * 
+     * Dispatching this action will return a promise that resolves to the new key value.
+     * 
+     * @param value a new value to be stored in the aggregate item
+     * @param key a number of key parts specifying a path to an aggregate item
+     * @return an action which may be dispatched to perform the update, which will return a promise resolving to the new key value
+     */
+    abstract addValue(value : DatumIn, ...key: Key) : AddAction
+
+    /** Update method.
+     * 
+     * Similar to set, except specifically updates and existing value and should fail (updating error metadata 
+     * or rejecting a promise) where an item does not already exist at the location indicated by the last KeyPart 
+     * in the key.
+     * 
+     * @param value a new value to be stored at the given location
+     * @param key a number of key parts specifying a path to some data item
+     * @return an action which may be dispatched to perform the update.
+     */
+    abstract updateValue(value : DatumIn, ...key: Key) : ValueAction | AsyncAction<ValueAction>
+
+    /** Merge method.
+     * 
+     * Similar to set, except merges data where a previous record exists with the same key
+     * 
+     * @param value a new value to be merged at the given location
+     * @param key a number of key parts specifying a path to some data item
+     * @return an action which may be dispatched to perform the update.
+     */
+     abstract mergeValue(value : DatumIn, ...key: Key) : ValueAction | AsyncAction<ValueAction>    
+
+    /** Validate a data item at the given location
+     * 
+     * @param key a number of key parts specifying a path to some data item
+     * @return an action which may be dispatched to perform the validation. 
+     */
     abstract validate(...key: Key) : Action | AsyncAction<Action>
+
     abstract setError(Exception: Exception, ...key: Key) : MetadataAction
-    abstract search(criteria : PackedCriteria, ...key: Key) : SearchAction
+    abstract search(criteria : PackedCriteria, ...key: Key) : SearchAction | AsyncAction<SearchAction>
 
     getRoot(state : State, ...key : Key) : DatumOut {
         if (this.parent) 
@@ -101,9 +217,6 @@ export abstract class Accessor {
         return this.getMetadata(state, ...key) as (Exception | undefined);
     }   
 
-    getAccessor(...key : Key) : Accessor {
-        return key.length > 0 ? new PathAccessor(this, key) : this;
-    }
 
     addCalculatedFields(calculator : Calculator) : Accessor {
         return new CalculatedFieldsAccessor(this, calculator);
@@ -111,25 +224,9 @@ export abstract class Accessor {
 }
 
 
-/** Get data from a recordset
- * 
- * get will return one of three things:
- * 
- * * A primitive value
- * * An object on which get(...keys) can be called
- * * An iterable over objects on which get(...keys) can be called
- * 
- * The specified keys may be strings (a field name or the key of a value in a collection) or numbers
- * (the index of a value in a collection)
- * 
- * @param {*} config 
- * @param {*} collection 
- * @param  {...string | number} key 
- * @returns 
- */
  export class BaseAccessor extends Accessor {
 
-    config : Config
+    protected config : Config
     basePath: string[]
 
     constructor(config : Config, basePath : string[], parent? : Accessor) {
@@ -256,42 +353,49 @@ export abstract class Accessor {
         return logReturn("getMetadataCarrier", result);
     }    
     
-
-    get(state : any, ...key : Key) : DatumOut {
-        logEntry("BaseAccessor.get", key);
-        const base = this.getBaseState(state);
-        let value : State | undefined;
-        try {
-            value = this.getState(state, base, this.config, ...key);
-            if (value === undefined) return undefined;
-            let config = getConfig(this.config, ...key);
-            let type = getDataType(value, config);
-            let result : View | NullablePrimitive        
-            switch (type) {
-                case DataType.RECORDSET:
-                case DataType.FIELDSET:
-                case DataType.REFERENCE:
-                case DataType.ARRAY:
-                        result = new View(this, state, ...key);
-                    break;
-                default:
-                    result = value as NullablePrimitive;
-            }    
-            return logReturn("BaseAccessor.get", result);
-        } catch (err) {
-            if (err instanceof ReferenceBoundary) {
-                let registry = getRegistry(Accessor);
-                let accessor;
-                if (typeof err?.config?.recordset === 'string')
-                    accessor = registry.resolve(err.config.recordset);
-                else {
-                    let name = err?.config?.recordset.name;
-                    accessor = new BaseAccessor(err?.config?.recordset, ["recordset", name]);
-                    registry.register(name, accessor);
+    get(head: KeyPart, ...tail : Key) : Accessor;
+    get(state : any, ...key : Key) : DatumOut;
+    get(stateOrHead : any, ...key : Key) : DatumOut | Accessor {
+        if (KeyGuards.isKeyPart(stateOrHead)) {
+            const head = stateOrHead;
+            return new PathAccessor(this, [stateOrHead, ...key]);
+        } else {
+            const state = stateOrHead;
+            logEntry("BaseAccessor.get", key);
+            const base = this.getBaseState(state);
+            let value : State | undefined;
+            try {
+                value = this.getState(state, base, this.config, ...key);
+                if (value === undefined) return undefined;
+                let config = getConfig(this.config, ...key);
+                let type = getDataType(value, config);
+                let result : View | NullablePrimitive        
+                switch (type) {
+                    case DataType.RECORDSET:
+                    case DataType.FIELDSET:
+                    case DataType.REFERENCE:
+                    case DataType.ARRAY:
+                            result = new View(this, state, ...key);
+                        break;
+                    default:
+                        result = value as NullablePrimitive;
+                }    
+                return logReturn("BaseAccessor.get", result);
+            } catch (err) {
+                if (err instanceof ReferenceBoundary) {
+                    let registry = getRegistry(Accessor);
+                    let accessor;
+                    if (typeof err?.config?.recordset === 'string')
+                        accessor = registry.resolve(err.config.recordset);
+                    else {
+                        let name = err?.config?.recordset.name;
+                        accessor = new BaseAccessor(err?.config?.recordset, ["recordset", name]);
+                        registry.register(name, accessor);
+                    }
+                    return accessor.get(state, ...err.key);
+                } else {
+                    throw err;
                 }
-                return accessor.get(state, ...err.key);
-            } else {
-                throw err;
             }
         }
     }
@@ -328,12 +432,20 @@ export abstract class Accessor {
         return { type: ActionType.delete, config: this.config, base: this.basePath, key };
     }
 
-    addValue(row: FieldArrayContent, ...key : Key) : RowAction {
-        return { type: ActionType.addValue, config: this.config, base: this.basePath, key, row };
+    addValue(row: FieldArrayContent, ...key : Key) : AddAction {
+        return (dispatch : Dispatch, getState: ()=>any) => {
+            dispatch({ type: ActionType.addValue, config: this.config, base: this.basePath, key, row });
+            const state = getState();
+            return Promise.resolve((this.getState(state, this.getBaseState(state), this.getConfig(), ...key) as FieldArray).length-1);
+        }
     }
 
     updateValue(value: Field, ...key : Key) : ValueAction {
         return { type: ActionType.updateValue, config: this.config, base: this.basePath, key, value };
+    }
+
+    mergeValue(value: Field, ...key : Key) : ValueAction {
+        return { type: ActionType.mergeValue, config: this.config, base: this.basePath, key, value };
     }
 
     search(criteria : PackedCriteria, ...key : Key) : SearchAction {
@@ -383,11 +495,13 @@ export abstract class DelegatingAccessor extends Accessor {
         this.accessor = accessor.setParent(this);
     }
 
-    get(state : any, ...key : Key) {
-        return this.accessor.get(state, ...key);
+    get(head: KeyPart, ...tail : Key) : Accessor;
+    get(state : any, ...key : Key) : DatumOut;
+    get(stateOrHead : any, ...key : Key) : DatumOut | Accessor {
+        return this.accessor.get(stateOrHead, ...key);
     }
 
-    set(value: NullablePrimitive, ...key : Key) : ValueAction {
+    set(value: NullablePrimitive, ...key : Key) : ValueAction | AsyncAction<ValueAction> {
         return this.accessor.set(value, ...key);
     }    
 
@@ -413,23 +527,27 @@ export abstract class DelegatingAccessor extends Accessor {
         return this.accessor.validate(...key);
     }      
 
-    insertValue(value: Field, ...key : Key) : ValueAction {
+    insertValue(value: Field, ...key : Key) : ValueAction | AsyncAction<ValueAction> {
         return this.accessor.insertValue(value, ...key);
     }  
 
-    updateValue(value: Field, ...key : Key) : ValueAction {
+    updateValue(value: Field, ...key : Key) : ValueAction | AsyncAction<ValueAction> {
         return this.accessor.updateValue(value, ...key);
     }  
 
-    removeValue(...key : Key) : Action {
+    mergeValue(value: Field, ...key : Key) : ValueAction | AsyncAction<ValueAction> {
+        return this.accessor.updateValue(value, ...key);
+    }
+
+    removeValue(...key : Key) : Action | AsyncAction<Action> {
         return this.accessor.removeValue(...key);
     }  
 
-    addValue(value: FieldArrayContent, ...key : Key) : RowAction {
+    addValue(value: FieldArrayContent, ...key : Key) : AddAction {
         return this.accessor.addValue(value, ...key);
     }  
 
-    search(criteria: PackedCriteria, ...key: Key) : SearchAction {
+    search(criteria: PackedCriteria, ...key: Key) : SearchAction | AsyncAction<SearchAction> {
         return this.accessor.search(criteria, ...key);
     }
 
@@ -451,10 +569,17 @@ export class CalculatedFieldsAccessor extends DelegatingAccessor {
         this.calculator = calculator;
     }
 
-    get(state : any, ...key : Key) {
-        let result : NullablePrimitive | View | undefined = this.calculator((...k) => this.getRoot(state, ...k), ...key);
-        if (result === undefined) result = this.accessor.get(state, ...key);
-        return result;
+    get(head: KeyPart, ...tail : Key) : Accessor;
+    get(state : any, ...key : Key) : DatumOut;
+    get(stateOrHead : any, ...key : Key) : DatumOut | Accessor {
+        if (KeyGuards.isKeyPart(stateOrHead)) {
+            return this.accessor.get(stateOrHead, ...key);
+        } else {
+            const state = stateOrHead;
+            let result : NullablePrimitive | View | undefined = this.calculator((...k) => this.getRoot(state, ...k), ...key);
+            if (result === undefined) result = this.accessor.get(stateOrHead, ...key);
+            return result;
+        }
     }
 
     setParent(parent : Accessor) {
@@ -499,8 +624,10 @@ export class PathAccessor extends DelegatingAccessor {
         this.path = path;
     }
     
-    get(state : any, ...key : Key) {
-        return this.accessor.get(state, ...this.path, ...key);
+    get(head: KeyPart, ...tail : Key) : Accessor;
+    get(state : any, ...key : Key) : DatumOut;
+    get(stateOrHead : any, ...key : Key) : DatumOut | Accessor {    
+        return this.accessor.get(stateOrHead, ...this.path, ...key);
     }
 
     getConfig(...key : Key) {

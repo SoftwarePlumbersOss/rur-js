@@ -13,6 +13,7 @@ export enum ActionType {
     insertValue = "RUR_INSERT_VALUE",
     addValue = "RUR_ADD_VALUE",
     updateValue = "RUR_UPDATE_VALUE",
+    mergeValue = "RUR_MERGE_VALUE",
     upsertValue = "RUR_UPSERT_VALUE",
     delete = "RUR_REMOVE_VALUE",
     validate = "RUR_VALIDATE",
@@ -103,6 +104,10 @@ export function reduce(state: any, action: Action) : any {
             if (!Guards.isValueAction(action)) throw new TypeError("wrong type for action");
             editor.insertAt(action.key, action.value);
             break;    
+        case ActionType.mergeValue:
+            if (!Guards.isValueAction(action)) throw new TypeError("wrong type for action");
+            editor.mergeAt(action.key, action.value);
+            break;              
         case ActionType.addValue:
             if (!Guards.isRowAction(action)) throw new TypeError("wrong type for action");
             editor.addAt(action.key, action.row);
