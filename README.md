@@ -24,9 +24,10 @@ const config = { type: DataType.RECORDSET };
 getRegistry(Accessor).register("users", new BaseAccessor(config, ['users']));
 ```
 
-Is enough to create a 'users' reducer which will hold information about multiple users. The configuration can be expanded to include specifications for
-fields, field groups, validations, and so on, but none of this is actually required; by default fields are optional and unvalidated and any name can
-be used for a field. Wherever possible, sensible defaults have been defined.
+Is enough to create a 'users' reducer which will hold information about multiple users (because we specified the type as a RECORDSET). The 
+configuration can be expanded to include specifications for fields, field groups, validations, and so on, but none of this is actually 
+required; by default fields are optional and unvalidated and any name can be used for a field. Wherever possible, sensible defaults 
+have been defined.
 
 ### Recomposable reads and updates
 
@@ -68,8 +69,8 @@ a.firstName = 'Jonathan';
 if very useful when we want (for example) to pass the user object to compound form control for update. In the world of redux, however, where objects
 in the store are immutable (only ever replaced, not updated), this form of recomposition is much harder to achieve. 
 
-Accessors allow a parent control to pass a subset of its own state to a child, **along with the actions required to update that state**, without the child control 
-needing to know anything about the parent.
+Accessors allow a parent control to pass a subset of its own state to a child, **along with the actions required to update that state**, 
+without the child control needing to know anything about the parent.
 
 ### Universal Metadata and Introspection
 
@@ -114,16 +115,49 @@ getRegistry(Accessor).register("users", new BaseAccessor(config, ['users']));
 Will create an accessor with a calculated 'fullName' field based on the 'firstName' and 'lastName'
 fields stored in the underlying redux store. 
 
-### Datasources
+Similarly,
+
+```javascript
+function validator(datum, field) {
+    if (field.equals("email") && !String(datum).includes("@")) return {
+        error: { code: ErrorCode.STATE_VALIDATION, message: 'please input a valid email address' }
+    }
+}
+
+const config = { type: DataType.RECORDSET };
+const accessor = new BaseAccessor(config, [users]).addValidation(validator);
+getRegistry(Accessor).register("users", new BaseAccessor(config, ['users']));
+```
+
+Will add a custom validation to the accessor which ensures any value in the 'email' field at least includes
+an @ sign.
+
+### Datasources and Forms
 
 RUR provides an out-of-the-box Datasource which stores information in browser-local storage (indexedDB).
-Subprojects are underway to support various cloud datastores, notably including google firstore.
+Subprojects are underway to support various cloud datastores, notably including Google firestore.
 
 Datasources are agnostic about technology and data formats but opinionated about lifecycle. Data is 
 retrieved from a datastore during a search and written to a reducer. Data is written back to the
-datasource when certain UI events occur (for example clicking on an 'OK' button). Such updates are 
-always performed at the level of an entire document or record.
+datastore when certain UI events occur (for example clicking on an 'OK' button). Such updates are 
+always performed at the level of an entire document or record. 
 
+* A Datasource is an Accessor for which update operations are only valid on first-level objects. So,
+  `datasource.set({ firstName: 'Jonathan', lastName: 'Essex'}, 'testy.mctester@test.io')` is a valid
+  operation on a datasource, but `datasource.set('Jonathan', 'testy.mctester@test.io', 'firstName')` 
+  is not.
+* A Datasource may be directly wired to a UI control for read-only access
+* When updating, a record from a Datasource will typically be copied into a Form (a separate accessor)
+  and then copied back to the datasource when the update is complete.
+* Datasource actions are all asynchronous (implemented using redux-thunk)
 
+RUR provides compound actions which encapsulate this lifecycle and enable the developer to simply link
+data lifecycle actions with navigation actions in order to create actions which are specific to the
+application being developed.
 
+### Navigation and Workflow
 
+The use of react router (where the application URL is an important part of application state) within a
+redux application can cause problems unless best practice is followed. RUR attempts to enforce good practice. 
+All actions required to update state are performed _before_ the URL is updated to display a new set of
+components.
