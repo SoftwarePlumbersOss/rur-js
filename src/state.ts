@@ -12,7 +12,7 @@ export type Metadata = { [ propName: string ] : MetadataPrimitive }
 export interface IMetadataCarrier {
     metadata: Metadata
     childMetadata? : { [childName: string]: IMetadataCarrier }
-    memberMetadata? : [ IMetadataCarrier ] 
+    memberMetadata? : IMetadataCarrier[] 
 }
 
 export type ChildMetadata = IMetadataCarrier["childMetadata"]

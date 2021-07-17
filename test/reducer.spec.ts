@@ -1,13 +1,16 @@
-import { reduce } from '../src/reducer';
-import { Accessor, BaseAccessor } from '../src/accessor';
-import thunk from 'redux-thunk';
+import { AnyAction } from 'redux';
+import thunk, { ThunkDispatch } from 'redux-thunk';
 import configureMockStore from 'redux-mock-store';
 
+import { reduce, Action } from '../src/reducer';
+import { Accessor, BaseAccessor } from '../src/accessor';
 import { configQueues, state } from './testdata';
+
+type DispatchExts = ThunkDispatch<any, void, any> // this sucks.
 
 const middlewares = [ thunk ];
 const initialState = (actions : any) => actions.reduce(reduce, state);
-function createStore() { return configureMockStore(middlewares)(initialState); }
+function createStore() { return configureMockStore<any, DispatchExts>(middlewares)(initialState); }
 
 const queueAccessor : Accessor = new BaseAccessor(configQueues, ['recordset', 'queues']);
 

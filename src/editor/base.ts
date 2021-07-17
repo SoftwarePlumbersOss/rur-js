@@ -1,6 +1,6 @@
 import { State, Guards as StateGuards, Field, IMetadataCarrier, MetadataPrimitive, FieldArray, FieldArrayContent, IRecordset, Filter as View } from '../state';
 import { Key, KeyPart } from '../types';
-import { getDataType } from '../datatype';
+import { DataType, getDataType } from '../datatype';
 import { Config, getConfig } from '../config';
 import { PackedCriteria } from '../criteria';
 import { Sort } from '../sort'
@@ -166,14 +166,22 @@ export abstract class StateEditor<T extends State> {
             childEditor.editAt(tail, editOperation);
             this.setChild(head, childEditor.getState())
             let childMetadata = childEditor.getMetadata();
-            if (childMetadata && !MetadataEditor.isEmpty(childMetadata)) {
-                this.replaceMetadata(
-                    MetadataEditor
-                        .edit(this.getAllMetadata())
-                        .merge({ metadata: {}, childMetadata: { [head]: childMetadata } })
-                        .prune()
-                        .getState()                
-                );
+            if (childMetadata) {
+                const currentMetadata = this.getAllMetadata();
+                if (this.getType() === DataType.ARRAY) {
+                    let memberMetadata = currentMetadata?.memberMetadata === undefined ? [] : [...currentMetadata.memberMetadata];
+                    memberMetadata[head as number] = childMetadata;
+                    this.replaceMetadata({
+                        ...currentMetadata,
+                        memberMetadata
+                    });
+                } else {
+                    this.replaceMetadata(
+                        {   ...currentMetadata,
+                            childMetadata: { ...currentMetadata.childMetadata, [head] : childMetadata }   
+                        }
+                    );
+                }
             }
         } else {
             editOperation(this);
