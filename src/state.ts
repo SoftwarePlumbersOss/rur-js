@@ -64,6 +64,10 @@ export class Guards {
         return Guards.isRichField(state) || Guards.isIRecordset(state);
     }
 
+    static isArray(state?: State) : state is FieldArray {
+        return Array.isArray(state);
+    }
+
     static isString(state?: State): state is string {
         const type = typeof state;
         return (type === 'string');

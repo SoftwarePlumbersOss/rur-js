@@ -13,10 +13,11 @@ export abstract class Collection {
     abstract removeValue(key : KeyPart) : Promise<void>;
     abstract addValue(value: FieldMapping) : Promise<KeyPart>;
     abstract search(criteria: PackedCriteria) : Promise<{[ key: string] : FieldMapping}>;
+    abstract load(key: KeyPart) : Promise<FieldMapping>;
 }
 
 export abstract class Driver {
-    abstract getCollection(collectionName: string, config: Config) : Collection;
+    abstract getCollection(collectionName: string, config?: Config) : Collection;
 }
 
 const drivers = getRegistry(Driver);
@@ -24,10 +25,21 @@ const drivers = getRegistry(Driver);
 /** A DataSource is just an Accessor which can only update top-level items. 
  * 
  */
-export abstract class DataSource extends DelegatingAccessor {
+export class DataSource extends DelegatingAccessor {
 
-    constructor(config : Config, basePath: string[], parent? : Accessor) {
-        super(new BaseAccessor(config, basePath), parent);
+    setParent(parent: Accessor): Accessor {
+        return new DataSource(this.accessor, parent);
+    }
+
+    constructor(baseAccessor : Accessor, parent : Accessor);
+    constructor(config : Config, basePath: string[]);
+    constructor(baseOrConfig: Accessor | Config, parentOrPath : Accessor | string[]) {
+        if (baseOrConfig instanceof Accessor && parentOrPath instanceof Accessor)
+            super(baseOrConfig, parentOrPath)
+        else if (!(baseOrConfig instanceof Accessor) && !(parentOrPath instanceof Accessor))
+            super(new BaseAccessor(baseOrConfig, parentOrPath));
+        else
+            throw new TypeError('either both params must be accessors, or neither');
     }
 
     get collection() : Collection {

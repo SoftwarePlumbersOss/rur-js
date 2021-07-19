@@ -229,10 +229,10 @@ export abstract class Accessor {
     protected config : Config
     basePath: string[]
 
-    constructor(config : Config, basePath : string[], parent? : Accessor) {
+    constructor(config : Config, basePath? : string[], parent? : Accessor) {
         super(parent);
         this.config = config;
-        this.basePath = basePath;
+        this.basePath = basePath ?? config.basePath;
     }
 
     setParent(parent: Accessor) {

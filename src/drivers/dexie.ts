@@ -1,51 +1,55 @@
 import { Driver, Collection as DriverCollection } from '../datasource';
-import { Accessor } from '../accessor';
-import { FieldMapping, State, NullablePrimitive, RichField } from '../state';
+import { Field, FieldArray, FieldArrayContent, FieldMapping, NullablePrimitive } from '../state';
 import { KeyPart } from '../types';
-import { ErrorCode, Exception } from '../exceptions';
-import { Collection, Dexie, Table, IndexableType } from 'dexie';
-import { Filter, Operator, Template, Guards as CriteriaGuards, apply, PackedCriteria, expand } from '../criteria';
-import { pickBy, mapValues, values, result } from 'lodash';
+import { ErrorCode } from '../exceptions';
+import { Collection, Dexie, Table } from 'dexie';
+import { Operator, Template, Guards as CriteriaGuards, apply, PackedCriteria, expand } from '../criteria';
+import { mapValues } from 'lodash';
 
-import getRegistry from '../registry';
 import { DateTime } from 'luxon';
 import { Guards as StateGuards } from '../state';
 import { Config } from '../config';
 
-interface DexieSchema {
+export interface DexieSchema {
     [name: string] : string[]
 }
 
-const drivers = getRegistry(Driver);
-class DexieDriver extends Driver {
-    dexie: Dexie = new Dexie("RUR");
+export class DexieDriver extends Driver {
+    dexie: Dexie;
     schema: DexieSchema;
 
     constructor(schema: DexieSchema) {
         super();
         this.schema = schema;
-        this.dexie.version(1).stores(mapValues(schema, (key,value)=>['++id', ...value].join(',')));
+        this.dexie = new Dexie("RUR");
+        const mappedSchema = mapValues(schema, (value)=>['++', ...value].join(','));
+        this.dexie.version(1).stores(mappedSchema);
     }
 
-    getCollection(collectionName: string, config: Config) : DriverCollection {
+    getCollection(collectionName: string) : DriverCollection {
         return new DexieCollection(this.dexie, collectionName, this.schema[collectionName]);
     }
 }
 
 
-type DexiePrimitives = string | number | Date 
+type DexiePrimitives = string | number | Date
 
 interface DexieFieldMapping { 
-    [filed: string] : DexiePrimitives | DexieFieldMapping
+    [field: string] : DexieField
 }
 
-type DexieField = DexiePrimitives | DexieFieldMapping;
+type DexieField = DexiePrimitives | DexieFieldMapping | DexieArray;
+
+type DexieArray = DexieField[]
 
 const Guards = {
     isPrimitive(field: DexieField) : field is DexiePrimitives {
         const type = typeof field;
         return (type === 'string' || type === 'number' || type === 'object' && field instanceof Date);
-    }
+    },
+    isArray(field: DexieField) : field is DexieArray {
+        return Array.isArray(field);
+    }    
 }
 
 export class DexieCollection extends DriverCollection {
@@ -93,40 +97,62 @@ export class DexieCollection extends DriverCollection {
         }
     }    
 
-    private transformIn(record : DexieFieldMapping) : FieldMapping {
+    private transformArrayIn(array : DexieArray) : FieldArray {
+        return array.filter(item => item !== null).map(item => this.transformIn(item) as FieldArrayContent);
+    }
+
+    private transformArrayOut(array : FieldArray) : DexieArray {
+        return array.map(item => this.transformOut(item));
+    }
+
+    private transformFieldMappingIn(record : DexieFieldMapping) : FieldMapping {
         const result : FieldMapping = {};
         for (const [key,value] of Object.entries(record)) {
-            if (Guards.isPrimitive(value)) 
-                result[key] = this.transformPrimitiveIn(value);
-            else
-                result[key] = this.transformIn(value);
+            result[key] = this.transformIn(value);
         }
         return result;
     }
 
-    private transformOut(record : FieldMapping) : DexieFieldMapping {
+    private transformFieldMappingOut(record : FieldMapping) : DexieFieldMapping {
         const result : DexieFieldMapping = {};
         for (const [key,value] of Object.entries(record)) {
-            if (StateGuards.isPrimitive(value)) 
-                result[key] = this.transformPrimitiveOut(value);
-            else {
-                if (StateGuards.isRichField(value)) {
-                    result[key] = this.transformOut(value.value as FieldMapping);
-                } else {
-                    result[key] = this.transformOut(value as FieldMapping);
-                }
-            }
+            result[key] = this.transformOut(value);
         }
         return result;
+    }
+
+    private transformIn(value : DexieField) : Field {
+        if (value === null) return value;
+        if (Guards.isPrimitive(value)) 
+            return this.transformPrimitiveIn(value);
+        else if (Guards.isArray(value))
+            return this.transformArrayIn(value);
+        else
+            return this.transformFieldMappingIn(value as DexieFieldMapping);
+    }
+
+    private transformOut(value : Field) : DexieField {
+        if (value === null) throw new TypeError('value should not be null');
+        if (StateGuards.isPrimitive(value)) 
+            return this.transformPrimitiveOut(value);
+        else if (StateGuards.isArray(value))
+            return this.transformArrayOut(value);
+        else {
+            if (StateGuards.isRichField(value)) {
+                return this.transformOut(value.value);
+            } else {
+                return this.transformFieldMappingOut(value as FieldMapping);
+            }
+        }
     }
 
 
     addValue(record : FieldMapping) : Promise<KeyPart> {
-        return this.table.add(this.transformOut(record)).then(key => key as number);
+        return this.table.add(this.transformFieldMappingOut(record)).then(key => key as number);
     }
 
     updateValue(record : FieldMapping, key : KeyPart) : Promise<void> {
-            return this.table.update(key, this.transformOut(record)).then(
+            return this.table.update(key, this.transformFieldMappingOut(record)).then(
                 count => {
                     if (count === 0) 
                         throw { code: ErrorCode.KEY_NOT_FOUND, message: `no record found for key ${key}`}
@@ -135,11 +161,11 @@ export class DexieCollection extends DriverCollection {
     };
     
     insertValue(record : FieldMapping, key : KeyPart) : Promise<void> {
-        return this.table.put(this.transformOut(record), key).then(()=>{});
+        return this.table.put(this.transformFieldMappingOut(record), key).then(()=>{});
 }    
 
     set(record : FieldMapping, key : KeyPart) : Promise<void> {
-            return this.table.put(this.transformOut(record), key).then(()=>{});
+            return this.table.put(this.transformFieldMappingOut(record), key).then(()=>{});
     }
 
     removeValue(key : KeyPart) : Promise<void> {
@@ -153,6 +179,16 @@ export class DexieCollection extends DriverCollection {
         return this.indexes.find(index => criteria[index] !== undefined);
     }
     
+    load(key: KeyPart ) : Promise<FieldMapping> {
+        const dexieKey = this.transformPrimitiveOut(key);
+        return this.table.get(dexieKey).then(result => {
+            if (result === undefined)
+                throw new RangeError(`undefined key ${key}`)
+            else
+                return this.transformFieldMappingIn(result);
+        });
+    }
+
     search(criteria : PackedCriteria) : Promise<{[ key: string] : FieldMapping}> {
         const filter = expand(criteria);
         if (filter.operator !== Operator.MATCHES_TEMPLATE || !CriteriaGuards.isTemplate(filter.value)) throw new RangeError('must supply a template filter');
@@ -185,7 +221,7 @@ export class DexieCollection extends DriverCollection {
         return collection.each((row, cursor) => {                    
             const key = this.transformPrimitiveIn(cursor.primaryKey as string) as string;
             const data = this.transformIn(row);
-            if (apply(data, filter)) result[key] = data;
+            if (apply(data, filter)) result[key] = data as FieldMapping;
         }).then(()=>result);
     }
 }
