@@ -67,7 +67,7 @@ export function expand(filter : PackedCriteria | Primitive , defaultOperator = O
 function comparator(a: Primitive, b: Primitive) {
     if (DateTime.isDateTime(a)) {
         const dateTimeB = DateTime.isDateTime(b) ? b : DateTime.fromISO(String(b));
-        return a.diff(dateTimeB).seconds;
+        return a.diff(dateTimeB).toMillis();
     } else {
         switch (typeof a) {
             case 'string':
@@ -115,7 +115,4 @@ export function apply(value : Field, filter : Filter, config? : Config) : boolea
                 return false;
             }
     }
-
-
-
 }

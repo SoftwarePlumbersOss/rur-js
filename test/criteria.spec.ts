@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import { Filter, Operator, apply, expand } from '../src/criteria';
 
 
@@ -33,6 +34,23 @@ describe('test Filter', () => {
         expect(apply(1, { operator: Operator.GREATER_THAN_OR_EQUALS, value: 1 })).toBe(true);
         expect(apply(2, { operator: Operator.GREATER_THAN_OR_EQUALS, value: 1 })).toBe(true);
     });
+
+    it('compares datetime values', ()=>{
+        const a = DateTime.fromISO('2010-01-01T10:32:02.112');
+        const b = DateTime.fromISO('2011-03-01T09:22:01.232');
+        expect(apply(a, { operator: Operator.EQUALS, value: a })).toBe(true);
+        expect(apply(a, { operator: Operator.EQUALS, value: b })).toBe(false);
+        expect(apply(a, { operator: Operator.LESS_THAN, value: b })).toBe(true);
+        expect(apply(a, { operator: Operator.LESS_THAN, value: a })).toBe(false);
+        expect(apply(a, { operator: Operator.LESS_THAN_OR_EQUALS, value: b })).toBe(true);
+        expect(apply(a, { operator: Operator.LESS_THAN_OR_EQUALS, value: a })).toBe(true);
+        expect(apply(b, { operator: Operator.LESS_THAN_OR_EQUALS, value: a })).toBe(false);
+        expect(apply(b, { operator: Operator.GREATER_THAN, value: a })).toBe(true);
+        expect(apply(a, { operator: Operator.GREATER_THAN, value: a })).toBe(false);
+        expect(apply(a, { operator: Operator.GREATER_THAN_OR_EQUALS, value: b })).toBe(false);
+        expect(apply(a, { operator: Operator.GREATER_THAN_OR_EQUALS, value: a })).toBe(true);
+        expect(apply(b, { operator: Operator.GREATER_THAN_OR_EQUALS, value: a })).toBe(true);
+    });    
 
     it('expands packed form', ()=>{
         expect(expand({ name: 'aaron', age : 100 })          
