@@ -12,7 +12,7 @@ const config : DexieSchema = {
 
 const driver : DexieDriver = new DexieDriver(config);
 
-describe('test simple accessor', ()=>{
+describe('test Dexie (IndexedDB) Datasource Driver', ()=>{
 
     it('can add a record', async ()=>{
         const id = await driver.getCollection('users').addValue({ email: 'jonathan.essex@test.com', firstName: 'jonathan', lastName: 'essex'});

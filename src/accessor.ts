@@ -501,7 +501,7 @@ export abstract class DelegatingAccessor extends Accessor {
         return this.accessor.get(stateOrHead, ...key);
     }
 
-    set(value: NullablePrimitive, ...key : Key) : ValueAction | AsyncAction<ValueAction> {
+    set(value: DatumIn, ...key : Key) : ValueAction | AsyncAction<ValueAction> {
         return this.accessor.set(value, ...key);
     }    
 

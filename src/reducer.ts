@@ -104,6 +104,10 @@ export function reduce(state: any, action: Action) : any {
             if (!Guards.isValueAction(action)) throw new TypeError("wrong type for action");
             editor.insertAt(action.key, action.value);
             break;    
+        case ActionType.updateValue:
+            if (!Guards.isValueAction(action)) throw new TypeError("wrong type for action");
+            editor.updateAt(action.key, action.value);
+            break;             
         case ActionType.mergeValue:
             if (!Guards.isValueAction(action)) throw new TypeError("wrong type for action");
             editor.mergeAt(action.key, action.value);

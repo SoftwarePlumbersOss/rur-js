@@ -67,6 +67,11 @@ export class PrimitiveEditor extends BaseStateEditor<NullablePrimitive> {
         return this;
     }
 
+    update(primitiveB: NullablePrimitive): this {
+        if (primitiveB !== undefined) this.state = primitiveB;
+        return this;
+    }
+
     getMetadata(): IMetadataCarrier {
         return this.metadata;
     }

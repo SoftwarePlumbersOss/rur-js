@@ -106,6 +106,11 @@ export class FieldMappingEditor extends BaseStateEditor<FieldMapping> {
         return this;
     }
 
+    update(fieldsetB: FieldMapping): this {
+        this.state = fieldsetB;
+        return this;
+    }
+
     getMetadata(): IMetadataCarrier {
         return this.metadata;
     }

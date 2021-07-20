@@ -24,7 +24,13 @@ export interface FieldSetConfig extends Config {
 
 // type === RECORDSET
 export interface RecordsetConfig extends Config {
-    value : FieldConfig
+    value : FieldConfig    
+}
+export interface DataSourceConfig extends RecordsetConfig {
+    collection: { 
+        driverName: string,
+        collectionName: string
+    }
 }
 
 // type === RECORDSET

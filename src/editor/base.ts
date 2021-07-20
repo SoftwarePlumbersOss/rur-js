@@ -62,6 +62,7 @@ export abstract class StateEditor<T extends State> {
 
 
      abstract merge(state: T): this;
+     abstract update(state: T): this;
      abstract mergeMetadata(metadata: IMetadataCarrier): this;
      abstract replaceMetadata(metadata: IMetadataCarrier): this; 
  
@@ -240,6 +241,10 @@ export abstract class StateEditor<T extends State> {
         return this.editAt(key, editor => editor.merge(value));
     }
 
+    updateAt(key: Key, value: State): this {
+        return this.editAt(key, editor => editor.update(value));
+    }
+
     addAt(key: Key, value: State): this {
         if (value === null) throw new TypeError('cannot insert a null field');
         return this.editAt(key, editor => {
@@ -383,6 +388,11 @@ export class FieldArrayEditor extends BaseStateEditor<FieldArray> {
         this.state = result;
         return this;
     }
+
+    update(array: FieldArray) : this {
+        this.state = array;
+        return this;
+    }
 }
 
 export class RecordEditor extends StateEditor<State> {
@@ -476,6 +486,16 @@ export class RecordEditor extends StateEditor<State> {
         }
         return this;
     }
+
+    update(record: State): this {
+        if (StateGuards.isRichField(record)) {
+            this.valueEditor.update(record.value);
+            this.replaceMetadata(record);
+        } else {
+            this.valueEditor.update(record);
+        }
+        return this;
+    }    
 }
 
 export class RecordsetEditor extends BaseStateEditor<IRecordset> {
@@ -597,6 +617,12 @@ export class RecordsetEditor extends BaseStateEditor<IRecordset> {
 
         return this;
     }
+
+    update(recordset: IRecordset): this {
+        this.state = { ...this.state, records: recordset.records, metadata: recordset.metadata };
+        return this;
+    }
+
 
     getMetadata() : IMetadataCarrier {
         return { metadata: {} }

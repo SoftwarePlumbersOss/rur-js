@@ -11,6 +11,7 @@ export abstract class Collection {
     abstract insertValue(value: FieldMapping, key : KeyPart) : Promise<void>;
     abstract updateValue(value: FieldMapping, key : KeyPart) : Promise<void>;
     abstract removeValue(key : KeyPart) : Promise<void>;
+    abstract set(value: FieldMapping, key : KeyPart) : Promise<void>;
     abstract addValue(value: FieldMapping) : Promise<KeyPart>;
     abstract search(criteria: PackedCriteria) : Promise<{[ key: string] : FieldMapping}>;
     abstract load(key: KeyPart) : Promise<FieldMapping>;
@@ -43,7 +44,7 @@ export class DataSource extends DelegatingAccessor {
     }
 
     get collection() : Collection {
-        const config = this.getConfig("datasource");
+        const config = this.getConfig()?.collection;
         if (config === undefined) throw new Error("No config");
         const { driverName, collectionName, ...rest } = config;
         return drivers.resolve(driverName).getCollection(collectionName, rest);
@@ -67,6 +68,15 @@ export class DataSource extends DelegatingAccessor {
         }
     }  
 
+    set(value: FieldMapping, key : KeyPart) : AsyncAction<ValueAction> {
+        return (dispatch : Dispatch) => {            
+            return this.collection.set(value, key).then(()=>{
+                const result = dispatch(this.accessor.set(value, key));
+                if (result instanceof Promise) return result;
+            });
+        }
+    }    
+
     removeValue(key : KeyPart) : AsyncAction<Action> {
         return (dispatch : Dispatch) => {            
             return this.collection.removeValue(key).then(()=>{
@@ -87,7 +97,7 @@ export class DataSource extends DelegatingAccessor {
     search(criteria: PackedCriteria) : AsyncAction<SearchAction> {
         return (dispatch : Dispatch) => {            
             return this.collection.search(criteria).then((result)=>{
-                dispatch(this.accessor.mergeValue(result));
+                dispatch(this.accessor.mergeValue({ records: result }));
             });
         };
     }
