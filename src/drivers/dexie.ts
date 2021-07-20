@@ -8,7 +8,6 @@ import { mapValues } from 'lodash';
 
 import { DateTime } from 'luxon';
 import { Guards as StateGuards } from '../state';
-import { Config } from '../config';
 
 export interface DexieSchema {
     [name: string] : string[]
@@ -26,7 +25,7 @@ export class DexieDriver extends Driver {
         this.dexie.version(1).stores(mappedSchema);
     }
 
-    getCollection(collectionName: string) : DriverCollection {
+    getCollection(collectionName: string) : DexieCollection {
         return new DexieCollection(this.dexie, collectionName, this.schema[collectionName]);
     }
 }
@@ -183,7 +182,7 @@ export class DexieCollection extends DriverCollection {
         const dexieKey = this.transformPrimitiveOut(key);
         return this.table.get(dexieKey).then(result => {
             if (result === undefined)
-                throw new RangeError(`undefined key ${key}`)
+                throw { code: ErrorCode.KEY_NOT_FOUND, message: `no record found for key ${key}`};
             else
                 return this.transformFieldMappingIn(result);
         });
@@ -223,5 +222,9 @@ export class DexieCollection extends DriverCollection {
             const data = this.transformIn(row);
             if (apply(data, filter)) result[key] = data as FieldMapping;
         }).then(()=>result);
+    }
+
+    removeAll() : Promise<void> {
+        return this.table.clear();
     }
 }
