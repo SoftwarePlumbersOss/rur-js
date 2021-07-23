@@ -7,7 +7,6 @@ import { Key, KeyPart, Guards as KeyGuards } from './types';
 import { PackedCriteria } from './criteria';
 import getRegistry from "./registry"
 import { ThunkAction, ThunkDispatch } from 'redux-thunk';
-import { state } from '../test/testdata';
 
 export type AsyncAction<T extends Action> = ThunkAction<Promise<void>, any, undefined, T>;
 export type AddAction = ThunkAction<Promise<KeyPart>, any, undefined, RowAction>;

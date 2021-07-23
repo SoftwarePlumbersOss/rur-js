@@ -31,7 +31,7 @@ have been defined.
 
 ### Recomposable reads and updates
 
-The RUR data model is comprised of searchable/sortable Recordsets, Forms, Fields, and Field Groups. This data is stored in a redux data store. Every
+The RUR data model is comprised of searchable/sortable Recordsets, Forms, Fields, and Field Groups. This data is stored in a redux Store. Every
 effort is made to keep the data representation in the store as simple and uncluttered as possible.
 
 Developers do not interact directly with these models however. Application code instead uses an 'Accessor', which provides a convenient and
@@ -109,7 +109,7 @@ function calculator(get, ...path) {
 
 const config = { type: DataType.RECORDSET };
 const accessor = new BaseAccessor(config, [users]).addCalculatedFields(calculator);
-getRegistry(Accessor).register("users", new BaseAccessor(config, ['users']));
+getRegistry(Accessor).register("users", accessor);
 ```
 
 Will create an accessor with a calculated 'fullName' field based on the 'firstName' and 'lastName'
@@ -126,7 +126,7 @@ function validator(datum, field) {
 
 const config = { type: DataType.RECORDSET };
 const accessor = new BaseAccessor(config, [users]).addValidation(validator);
-getRegistry(Accessor).register("users", new BaseAccessor(config, ['users']));
+getRegistry(Accessor).register("users", accessor);
 ```
 
 Will add a custom validation to the accessor which ensures any value in the 'email' field at least includes
@@ -134,8 +134,11 @@ an @ sign.
 
 ### Datasources and Forms
 
-RUR provides an out-of-the-box Datasource which stores information in browser-local storage (indexedDB).
-Subprojects are underway to support various cloud datastores, notably including Google firestore.
+RUR integrates with back-end services via a Datasource together with an appropriate driver. The core RUR 
+project provides an out-of-the-box driver which stores information in browser-local storage (indexedDB).
+Subprojects are underway to support various cloud datastores, notably including Google firestore. The Driver
+component is however designed to be easy to implement and developing a Driver for any REST API should be
+reasonably straightforward.
 
 Datasources are agnostic about technology and data formats but opinionated about lifecycle. Data is 
 retrieved from a datastore during a search and written to a reducer. Data is written back to the
@@ -161,3 +164,38 @@ The use of react router (where the application URL is an important part of appli
 redux application can cause problems unless best practice is followed. RUR attempts to enforce good practice. 
 All actions required to update state are performed _before_ the URL is updated to display a new set of
 components.
+
+RUR introduces the concept of a 'data path' to the application, and ensures that all data on the current
+data path is loaded. Some examples of simple data paths:
+
+* `/users/jonathan` Where 'users' is the name of a Datasource and 'jonathan' is the id of a record within it. 
+* `/users/jonathan/primaryGroup` Where 'primaryGroup' is a reference in the 'user' record to the 'groups' 
+   accessor which relates the   user to a specific group. 
+* `/groups/admin/members` Where 'groups' is a datasource, 'admin' is the id of a record within it, and 
+   'members' is the name of a one-to-many relation within the 'group' record which links a group to multiple
+   users.
+
+The `Navigator` component provided by RUR has a similar API to the standard 'history' component and can
+be used to set the application path in exactly the same way. However, the Navigator component will also
+ensure that any data specified on the new data path is loaded *before* changing the application path 
+and thus updating the UI.
+
+By default, the data path is the same as the application path; therefore all one needs to do is register
+a datasource called (for example) `users` in order to make sure that any UI components which are routed to
+render on `/users/:id` will have access to the user data for the specified id. The navigator component can however
+be configured to perform a mapping between the application path and the data path. For example:
+
+```
+   const users = getRegistry(Datasource).resolve('users');
+   const config = {
+       '/players/:id' : [ users, 'id' ] 
+       '/users' : null       
+   }
+```
+
+Will suppress the default mapping of the `/users` path and instead map the application path `/players/`_id_ to 
+the data path `/users/`_id_. This would ensure that (for example) a UI component which is rendered on the application
+path `/players/:id/editor` can assume that the relevant user data will have been loaded from the back-end data store
+_before_ the UI component is rendered.
+
+

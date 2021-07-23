@@ -25,6 +25,7 @@
   "author": "Jonathan Essex",
   "license": "ISC",
   "devDependencies": {
+    "@types/history": "^4.7.9",
     "@types/jest": "^26.0.23",
     "@types/lodash": "^4.14.171",
     "@types/luxon": "^1.27.0",
@@ -39,8 +40,10 @@
   },
   "dependencies": {
     "dexie": "^3.0.3",
+    "history": "^5.0.0",
     "lodash": "^4.17.21",
     "luxon": "^1.27.0",
+    "path-to-regexp": "^6.2.0",
     "redux-thunk": "^2.3.0",
     "uuid": "^8.3.2"
   }

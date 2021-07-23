@@ -101,4 +101,12 @@ export class DataSource extends DelegatingAccessor {
             });
         };
     }
+
+    load(id: KeyPart) : AsyncAction<ValueAction> {
+        return (dispatch : Dispatch) => {            
+            return this.collection.load(id).then((result)=>{
+                dispatch(this.accessor.set(result, id));
+            });
+        };
+    }    
 }
