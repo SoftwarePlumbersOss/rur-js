@@ -11,7 +11,7 @@ export function edit<T extends State>(config?: Config, state?: T, metadata?: IMe
     switch (type) {
         case DataType.RECORDSET: return new RecordsetEditor(config, <IRecordset> state) as unknown as StateEditor<T>;
         case DataType.RECORD: return new RecordEditor(config, <State>state) as unknown as StateEditor<T>;
-        case DataType.FIELDSET: return new FieldMappingEditor(config, <FieldMapping>state, metadata) as unknown as StateEditor<T>;
+        case DataType.FIELD_MAPPING: return new FieldMappingEditor(config, <FieldMapping>state, metadata) as unknown as StateEditor<T>;
         case DataType.ARRAY: return new FieldArrayEditor(config, <FieldArray>state, metadata) as unknown as StateEditor<T>;
         case DataType.STRING:
         case DataType.REFERENCE:

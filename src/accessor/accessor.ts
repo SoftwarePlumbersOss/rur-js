@@ -253,7 +253,7 @@ export abstract class Accessor {
                 case DataType.ARRAY:
                     const array = <FieldArray>value;
                     return array.keys();
-                case DataType.FIELDSET:
+                case DataType.FIELD_MAPPING:
                     const fields = <FieldMapping>value;
                     return Object.keys(fields);
                 default:
@@ -302,7 +302,7 @@ export abstract class Accessor {
                     const array = value as FieldArray;
                     result = this.getState(state, array[head], getConfig(config, head), ...tail);
                     break;
-                case DataType.FIELDSET:
+                case DataType.FIELD_MAPPING:
                     if (typeof head !== 'string') throw new TypeError('key for fieldset must be a string');
                     const fields = value as FieldMapping;
                     result = this.getState(state, fields[head], getConfig(config, head), ...tail);
@@ -332,7 +332,7 @@ export abstract class Accessor {
                     let record = (value as IRecordset).records[head as string];
                     result = record ? this.getMetadataCarrier(state, record, getConfig(config, head), ...tail) : undefined
                     break;
-                case DataType.FIELDSET:
+                case DataType.FIELD_MAPPING:
                     if (typeof head !== 'string') throw new TypeError('key for fieldset must be a string');
                     const fields = value as FieldMapping;
                     result = this.getMetadataCarrier(state, fields[head], getConfig(config, head), ...tail);
@@ -373,7 +373,7 @@ export abstract class Accessor {
                 let result : View | NullablePrimitive        
                 switch (type) {
                     case DataType.RECORDSET:
-                    case DataType.FIELDSET:
+                    case DataType.FIELD_MAPPING:
                     case DataType.REFERENCE:
                     case DataType.ARRAY:
                             result = new View(this, state, ...key);

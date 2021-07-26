@@ -45,8 +45,8 @@ export interface ReferencedByConfig extends Config {
 /** Configuration for a field with type === DataType.FieldMapping.
  * 
  */
-export interface FieldSetConfig extends Config {
-    fields : { [ prop: string ] : FieldConfig | FieldSetConfig }
+export interface FieldMappingConfig extends Config {
+    fields : { [ prop: string ] : FieldConfig | FieldMappingConfig }
 }
 
 // type === RECORDSET
@@ -70,8 +70,8 @@ export class Guards {
         return config.type === DataType.RECORDSET;
     }
 
-    static isFieldSetConfig(config: Config) : config is FieldSetConfig {
-        return config.type === DataType.FIELDSET;
+    static isFieldSetConfig(config: Config) : config is FieldMappingConfig {
+        return config.type === DataType.FIELD_MAPPING;
     }
 
     static isReferenceConfig(config: Config) : config is ReferenceConfig {
@@ -93,7 +93,7 @@ export function getConfig(config? : Config, ...key : Key) : Config | undefined {
         const [ head, ...tail ] = key;
         if (!config) {
             if (typeof head === 'string')
-                config = { type: DataType.FIELDSET, fields: {} }
+                config = { type: DataType.FIELD_MAPPING, fields: {} }
             else if (typeof head === 'number')
                 config = { type: DataType.ARRAY }
             else 

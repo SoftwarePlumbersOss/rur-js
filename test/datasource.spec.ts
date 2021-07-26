@@ -38,7 +38,7 @@ const config : DataSourceConfig = {
         collectionName: 'users'
     },
     value: {
-        type: DataType.FIELDSET,
+        type: DataType.FIELD_MAPPING,
         fields: {
             email: { type: DataType.STRING },
             dateOfBirth: { type: DataType.DATETIME }

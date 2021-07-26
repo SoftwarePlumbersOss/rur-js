@@ -14,7 +14,7 @@ describe('test simple accessor', ()=>{
 
     it('can fetch config', () => {
         expect(queueAccessor.getConfig()?.collection).toBeDefined();
-        expect(queueAccessor.getConfig('a')?.type).toBe(DataType.FIELDSET);
+        expect(queueAccessor.getConfig('a')?.type).toBe(DataType.FIELD_MAPPING);
         expect(queueAccessor.getConfig('a','queueName')?.maxLength).toBe(32);
         expect(queueAccessor.getConfig('a','items',0)?.recordset).toBe('requests');
     });

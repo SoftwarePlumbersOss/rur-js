@@ -67,7 +67,7 @@ export class FieldMappingEditor extends BaseStateEditor<FieldMapping> {
         switch (config.type) {
             case DataType.RECORDSET:
                 return { state: { ...metadata, records: {} } } // we don't merge record data
-            case DataType.FIELDSET:
+            case DataType.FIELD_MAPPING:
                 return FieldMappingEditor.createFieldsetFromMetadata(config, metadata);
             default:
                 if (metadata.childMetadata)

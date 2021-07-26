@@ -5,7 +5,7 @@ import { DateTime } from 'luxon';
 export enum DataType {
     RECORD = "RECORD",
     RECORDSET = "RECORDSET",
-    FIELDSET = "FIELDSET",
+    FIELD_MAPPING = "FIELD_MAPPING",
     ARRAY = "ARRAY",
     NUMBER = "NUMBER",
     STRING = "STRING",
@@ -24,7 +24,7 @@ export function getDataType(state?: State, config?: Config) : DataType {
         case DataType.RECORDSET:
             if (!Guards.isIRecordset(state)) throw new TypeError(`State does not match configured type ${config.type}`)
             return config.type;
-        case DataType.FIELDSET:
+        case DataType.FIELD_MAPPING:
             if (Guards.isPrimitive(state)) throw new TypeError(`State does not match configured type ${config.type}`)
             return config.type;
         case DataType.RECORD:
@@ -65,7 +65,7 @@ export function getDataType(state?: State, config?: Config) : DataType {
                     else if (Guards.isRichField(state))
                         return DataType.RECORD;
                     else
-                        return DataType.FIELDSET;
+                        return DataType.FIELD_MAPPING;
             }
     }
 }

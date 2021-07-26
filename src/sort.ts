@@ -48,7 +48,7 @@ export function apply(a : Field, b: Field, sort : Order | Sort, config? : Config
     const type = getDataType(a, config);
 
     switch (type) {
-        case DataType.FIELDSET:
+        case DataType.FIELD_MAPPING:
             if (Guards.isSort(sort) && StateGuards.isFieldMapping(a) && StateGuards.isFieldMapping(b)) {
                 let result = 0;
                 for (let [field, order] of Object.entries(sort)) {

@@ -5,7 +5,7 @@ import { DataType } from '../src/datatype';
 const config : RecordsetConfig = {
     type: DataType.RECORDSET,
     value: {
-        type: DataType.FIELDSET,
+        type: DataType.FIELD_MAPPING,
         fields: {
             fieldOne: { type: DataType.STRING },
             fieldTwo: { type: DataType.NUMBER }

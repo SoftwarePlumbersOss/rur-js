@@ -3,21 +3,51 @@ import { PackedCriteria } from './criteria';
 import { Sort } from './sort'
 import { Exception } from './exceptions';
 
+/** RUR Primitive Data Type
+ * 
+ * Defines the primitive fields which can be included in an RUR field mapping. This includes
+ * strings, numbers, and luxon 'DateTime' objects.
+ */
 export  type Primitive = string | number | DateTime;
+
 export  type NullablePrimitive = Primitive | null;
 
+/** RUR Metadata Primitive
+ * 
+ * RUR metadata can include all the basic primitive data types, and also the 'Exception' data type.
+ * 
+ */
 export type MetadataPrimitive = string | number | DateTime | Exception | undefined | null;
 
+/** RUR Metadata
+ * 
+ * RUR Metadata is simply a mapping of a name to a primitive value.
+ */
 export type Metadata = { [ propName: string ] : MetadataPrimitive }
+
+/** The Metadata Carrier interface
+ * 
+ * Some RUR objects can 'carry' the metadata for their children. This keeps the children themselves
+ * quite simple, at the expense of making the parent object a little more complicated.
+ * 
+ */
 export interface IMetadataCarrier {
+    /** metadata associated with 'this' object */
     metadata: Metadata
+    /** metadata associated with descendents of this object (if indexed by a string) */
     childMetadata? : { [childName: string]: IMetadataCarrier }
+    /** metadata associated with descendednts of this object (if indexed by a number) */
     memberMetadata? : IMetadataCarrier[] 
 }
 
 export type ChildMetadata = IMetadataCarrier["childMetadata"]
 
-
+/** Core RUR Object Type.
+ * 
+ * This interface defines the type of object which can be handled by the RUR reducer. A FieldMapping
+ * is a mapping of a name to a primitive, a recordset, an array, or a child FieldMapping.
+ * 
+ */
 export interface FieldMapping { 
     [ fieldName: string ] : NullablePrimitive | IRecordset | FieldMapping | (Primitive | FieldMapping)[]
 }

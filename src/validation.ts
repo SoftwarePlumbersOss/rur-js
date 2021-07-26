@@ -100,7 +100,7 @@ export function validateDateTime(editor : StateEditor<NullablePrimitive>) : void
 
 export function validate(editor: StateEditor<State>) {
     switch(editor.getType()) {
-        case DataType.FIELDSET: 
+        case DataType.FIELD_MAPPING: 
             validateFieldset(editor as StateEditor<FieldMapping>);
             break;
         case DataType.RECORDSET: 

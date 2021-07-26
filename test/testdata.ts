@@ -11,7 +11,7 @@ export const configQueues : DataSourceConfig = {
     },
     type: DataType.RECORDSET,
     value: {
-        type: DataType.FIELDSET,
+        type: DataType.FIELD_MAPPING,
         fields: {
             queueName: { maxLength: 32 },
             items: { 
@@ -34,7 +34,7 @@ export const configRequests: DataSourceConfig = {
     },
     type: DataType.RECORDSET,
     value: {
-        type: DataType.FIELDSET,
+        type: DataType.FIELD_MAPPING,
         fields: {
             user: {
                 type: DataType.REFERENCE,

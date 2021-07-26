@@ -21,7 +21,7 @@ describe('get datatype from State without config', ()=>{
     });
 
     it('gets datatype for an object', () => {
-        expect(getDataType({ abc: 123 })).toBe(DataType.FIELDSET);
+        expect(getDataType({ abc: 123 })).toBe(DataType.FIELD_MAPPING);
     });
 
     it('gets datatype for an IRecordset', () => {
@@ -37,7 +37,7 @@ describe('get datatype from State without config', ()=>{
 const config : RecordsetConfig = {
     type: DataType.RECORDSET,
     value: {
-        type: DataType.FIELDSET,
+        type: DataType.FIELD_MAPPING,
         fields: {
             fieldOne: { type: DataType.STRING },
             fieldTwo: { type: DataType.NUMBER },
@@ -62,7 +62,7 @@ describe('get datatype from State with config', ()=>{
     });
 
     it('gets datatype for a fieldsset', () => {
-        expect(getDataType({ value: 123 }, getConfig(config,'*'))).toBe(DataType.FIELDSET);
+        expect(getDataType({ value: 123 }, getConfig(config,'*'))).toBe(DataType.FIELD_MAPPING);
     });
 
     it('gets datatype for an IRecordset', () => {
@@ -70,7 +70,7 @@ describe('get datatype from State with config', ()=>{
     });
 
     it('gets value datatype for an IRecord', () => {
-        expect(getDataType({ value: {}, metadata: {} }, getConfig(config, '*'))).toBe(DataType.FIELDSET); //yes, not RECORD
+        expect(getDataType({ value: {}, metadata: {} }, getConfig(config, '*'))).toBe(DataType.FIELD_MAPPING); //yes, not RECORD
     });
 
     it('throws a TypeError when config and state disagree', () => {

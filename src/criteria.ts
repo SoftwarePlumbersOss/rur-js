@@ -85,7 +85,7 @@ export function apply(value : Field, filter : Filter, config? : Config) : boolea
     const type = getDataType(value, config);
 
     switch (type) {
-        case DataType.FIELDSET:
+        case DataType.FIELD_MAPPING:
             if (filter.operator === Operator.MATCHES_TEMPLATE && Guards.isTemplate(filter.value)) {
                 return Object.entries(filter.value).every(([field, filter])=> { 
                     return apply((value as FieldMapping)[field], filter, getConfig(config, field));
