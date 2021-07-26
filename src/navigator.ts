@@ -1,5 +1,5 @@
 
-import { createBrowserHistory } from 'history';
+import { createBrowserHistory, History } from 'history';
 import { Action } from 'redux';
 import { ThunkAction, ThunkDispatch } from 'redux-thunk';
 import { pathToRegexp, Key } from 'path-to-regexp';
@@ -8,8 +8,6 @@ import { ReferenceBoundary } from './exceptions';
 import { KeyPart } from './types';
 import { getBasePath } from './reducer';
 import registry from './registry';
-
-const history = createBrowserHistory();
 
 enum ActionType {
     push = "RUR_NAV_PUSH",
@@ -42,7 +40,7 @@ export abstract class Navigator {
 
 interface NavigatorState {
     path: string,
-    parent?: NavigatorState
+    previous?: NavigatorState
 }
 
 const Guards = {
@@ -53,14 +51,21 @@ const Guards = {
 
 class BaseNavigator extends Navigator {
 
+    history : History;
+
+    constructor(history? : History) {
+        super();
+        this.history = history ?? createBrowserHistory();
+    }
+
     static reduce(state : NavigatorState = { path: '/' }, action: NavigationAction) {
         switch (action.type) {
             case ActionType.pop:
-                state = state.parent ?? state;
+                state = state.previous ?? state;
                 break;
             case ActionType.push:
                 if (Guards.isPathAction(action)) {
-                    state = { path: action.path, parent: state }
+                    state = { path: action.path, previous: state }
                 } else {
                     throw new TypeError(`invalid action type`)
                 }
@@ -78,7 +83,7 @@ class BaseNavigator extends Navigator {
 
     push(path: string): AsyncAction<PathAction> {
         return (dispatch, getState) => {
-            history.replace(path);
+            this.history.replace(path);
             dispatch({type: ActionType.push, path : path});
             return Promise.resolve();
         }
@@ -86,8 +91,8 @@ class BaseNavigator extends Navigator {
 
     pop(): AsyncAction<NavigationAction> {
         return (dispatch, getState) => {
-            const path = this.getBaseState(getState()).path;
-            history.replace(path);
+            const path = this.getBaseState(getState()).previous?.path;
+            if (path !== undefined) this.history.replace(path);
             dispatch({type: ActionType.pop});
             return Promise.resolve();
         }
@@ -95,7 +100,7 @@ class BaseNavigator extends Navigator {
 
     replace(path: string): AsyncAction<PathAction> {
         return (dispatch, getState) => {
-            history.replace(path);
+            this.history.replace(path);
             dispatch({type: ActionType.replace, path : path});
             return Promise.resolve();
         }
@@ -205,11 +210,14 @@ class DataNavigator extends Navigator {
         }
     }
 
-    protected load(dispatch : Dispatch, getState : ()=>any, path: string) : Promise<void> {
-        let dataPath = this.parseConfiguredPath(path);
-        if (dataPath === undefined) {
-            dataPath = this.parseDefaultPath(path);
-        }        
+    protected load(dispatch : Dispatch, getState : ()=>any, path?: string) : Promise<void> {
+        let dataPath;
+        if (path !== undefined) {
+            dataPath = this.parseConfiguredPath(path);
+            if (dataPath === undefined) {
+                dataPath = this.parseDefaultPath(path);
+            }
+        }
         if (dataPath !== null && dataPath !== undefined) {
             const [ head, ...tail ] = dataPath;
             return DataNavigator.loadDataPath(dispatch, getState, head as Accessor, tail);
@@ -226,7 +234,7 @@ class DataNavigator extends Navigator {
 
     pop(): AsyncAction<NavigationAction> {
         return (dispatch : Dispatch, getState) => this
-            .load(dispatch, getState, this.getBaseState(getState()).path)
+            .load(dispatch, getState, this.getBaseState(getState()).previous?.path)
             .then(()=>dispatch(this.navigator.pop()));        
     }
 
@@ -242,6 +250,6 @@ export const reduce = BaseNavigator.reduce;
 
 const navigator : DataNavigator = new DataNavigator(new BaseNavigator(), []);
 
-export function getBrowserNavigator() {
-    return navigator;
+export function getBrowserNavigator(history? : History) {
+    return history === undefined ? navigator : new DataNavigator(new BaseNavigator(history), []);
 }

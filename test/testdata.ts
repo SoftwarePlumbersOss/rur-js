@@ -1,6 +1,7 @@
 import { DataType } from '../src/datatype';
 import { DataSourceConfig } from '../src/config';
 import { IRecordset } from '../src/state';
+import { DateTime } from 'luxon';
 
 export const configQueues : DataSourceConfig = {
     name: 'queues',
@@ -43,6 +44,9 @@ export const configRequests: DataSourceConfig = {
                 type: DataType.REFERENCE,
                 recordset: 'songs'
             },
+            atTime: {
+                type: DataType.DATETIME
+            }
         }
     }
 }
@@ -54,14 +58,16 @@ export const requests : IRecordset = {
             metadata: {},
             value: {
                 user: 'a1user',
-                song: 'a1song'
+                song: 'a1song',
+                atTime: DateTime.fromISO('2015-02-12T:09:33:12.032')
             }
         },
         'a2': {
             metadata: { },
             value: {
                 user: 'a2user',
-                song: 'a2song'
+                song: 'a2song',
+                atTime: DateTime.fromISO('2015-02-12T:09:34:12.032')
             }
 
         },
@@ -69,14 +75,16 @@ export const requests : IRecordset = {
             metadata: { },
             value: {
                 user: 'b1user',
-                song: 'b1song'
+                song: 'b1song',
+                atTime: DateTime.fromISO('2015-02-12T:09:35:12.032')
             }
         },
         'b2': {
             metadata: { },
             value: {
                 user: 'b2user',
-                song: 'b2song'
+                song: 'b2song',
+                atTime: DateTime.fromISO('2015-02-12T:09:36:12.032')
             }
 
         }
