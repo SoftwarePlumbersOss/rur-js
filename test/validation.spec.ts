@@ -3,7 +3,7 @@ import { validate } from '../src/validation';
 import { edit } from '../src/editor';
 import { Exception, ErrorCode } from '../src/exceptions';
 
-const queues = state.recordset.queues;
+const queues = state.data.queues;
 
 describe('test simple validation', ()=>{
     it('can validate a simple field by key', ()=>{

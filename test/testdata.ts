@@ -1,9 +1,13 @@
 import { DataType } from '../src/datatype';
-import { RecordsetConfig } from '../src/config';
+import { DataSourceConfig } from '../src/config';
 import { IRecordset } from '../src/state';
 
-export const configQueues : RecordsetConfig = {
-    firestoreCollection: 'queues',
+export const configQueues : DataSourceConfig = {
+    name: 'queues',
+    collection: {
+        driverName: 'dexie',
+        collectionName: 'queues'
+    },
     type: DataType.RECORDSET,
     value: {
         type: DataType.FIELDSET,
@@ -21,8 +25,12 @@ export const configQueues : RecordsetConfig = {
     textSearchFields: [ "queueName" ]
 };
 
-export const configRequests: RecordsetConfig = {
-    firestoreCollection: 'requests',
+export const configRequests: DataSourceConfig = {
+    name: 'requests',
+    collection: {
+        driverName: 'dexie',
+        collectionName: 'requests'
+    },
     type: DataType.RECORDSET,
     value: {
         type: DataType.FIELDSET,
@@ -39,7 +47,7 @@ export const configRequests: RecordsetConfig = {
     }
 }
 
-const requests : IRecordset = { 
+export const requests : IRecordset = { 
     metadata: {},
     records: {
         'a1' : { 
@@ -109,7 +117,7 @@ const users : IRecordset = {
     }
 }
 
-const songs : IRecordset = {
+export const songs : IRecordset = {
     metadata: {},
     records: {
         a1song: {
@@ -143,7 +151,7 @@ const songs : IRecordset = {
     }
 }
 
-const queues : IRecordset = {
+export const queues : IRecordset = {
     metadata: { },
     records: {
         'a': {
@@ -165,10 +173,13 @@ const queues : IRecordset = {
 }
 
 export const state = {
-    recordset: {
+    data: {
         queues,
         users,
         songs,
         requests
+    },
+    navigator: {
+
     }
 }

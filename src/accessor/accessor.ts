@@ -1,12 +1,13 @@
-import { DataType, getDataType } from './datatype';
-import { State, Guards as StateGuards, IRecordset, RichField, NullablePrimitive, Field, Metadata, IMetadataCarrier, FieldMapping, MetadataPrimitive, FieldArray, FieldArrayContent } from './state';
-import { Config, getConfig } from './config';
-import { ReferenceBoundary, Exception } from './exceptions';
+import { DataType, getDataType } from '../datatype';
+import { State, Guards as StateGuards, IRecordset, RichField, NullablePrimitive, Field, Metadata, IMetadataCarrier, FieldMapping, MetadataPrimitive, FieldArray, FieldArrayContent } from '../state';
+import { Config, getConfig } from '../config';
+import { ReferenceBoundary, Exception } from '../exceptions';
 import { Action, ActionType, MetadataAction, ValueAction, RowAction, MetadataValueAction, SearchAction } from './reducer';
-import { Key, KeyPart, Guards as KeyGuards } from './types';
-import { PackedCriteria } from './criteria';
-import getRegistry from "./registry"
+import { Key, KeyPart, Guards as KeyGuards } from '../types';
+import { PackedCriteria } from '../criteria';
+import getRegistry from "../registry"
 import { ThunkAction, ThunkDispatch } from 'redux-thunk';
+import { getBasePath } from '../reducer';
 
 export type AsyncAction<T extends Action> = ThunkAction<Promise<void>, any, undefined, T>;
 export type AddAction = ThunkAction<Promise<KeyPart>, any, undefined, RowAction>;
@@ -231,7 +232,7 @@ export abstract class Accessor {
     constructor(config : Config, basePath? : string[], parent? : Accessor) {
         super(parent);
         this.config = config;
-        this.basePath = basePath ?? config.basePath;
+        this.basePath = basePath ?? config.basePath ?? [ config.name ];
     }
 
     setParent(parent: Accessor) {
@@ -278,7 +279,8 @@ export abstract class Accessor {
 
 
     getBaseState(state : any) : State {
-        return this.basePath.reduce((state : any, part : string)=>state[part], state) as State;
+        const fullPath = [ ...getBasePath(), 'data', ...this.basePath ];
+        return fullPath.reduce((state : any, part : string)=>state[part], state) as State;
     }
     
     getState(state : any, value : State, config? : Config, ...key : Key) : State | undefined {
@@ -361,7 +363,7 @@ export abstract class Accessor {
         } else {
             const state = stateOrHead;
             logEntry("BaseAccessor.get", key);
-            const base = this.getBaseState(state);
+            const base = this.getBaseState(state) ?? { records: {}, metadata: {} }; 
             let value : State | undefined;
             try {
                 value = this.getState(state, base, this.config, ...key);

@@ -3,7 +3,7 @@ import { configQueues, state } from './testdata';
 import { IRecordset, FieldMapping, toField } from '../src/state';
 import { Order } from '../src/sort';
 
-const queues = state.recordset.queues;
+const queues = state.data.queues;
 
 describe('test simple editor', ()=>{
 

@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import thunk, { ThunkDispatch } from 'redux-thunk';
 import configureMockStore from 'redux-mock-store';
 import { DateTime } from 'luxon';
-import { DataSource, Driver } from '../src/datasource';
+import { DataSource, Driver } from '../src/accessor';
 
 import { DexieCollection, DexieDriver, DexieSchema } from '../src/drivers/dexie';
 import { ErrorCode } from '../src/exceptions';
@@ -11,13 +11,13 @@ import getRegistry from '../src/registry';
 import { DataSourceConfig } from '../src/config';
 import { DataType } from '../src/datatype';
 
-import { reduce } from '../src/reducer';
+import { getReducer } from '../src/reducer';
 import { KeyPart } from '../src/types';
 
 // set up a test redux store
 type DispatchExts = ThunkDispatch<any, void, any> // this sucks.
 const middlewares = [ thunk ];
-const initialState = (actions : any) => actions.reduce(reduce, { users: { records: [], metadata: {} } });
+const initialState = (actions : any) => actions.reduce(getReducer(), { data: { users: { records: [], metadata: {} } } });
 function createStore() { return configureMockStore<any, DispatchExts>(middlewares)(initialState); }
 
 // set up the dexie datasource driver
@@ -32,6 +32,7 @@ const usersCollection = drivers.resolve("dexie").getCollection("users") as Dexie
 // set up the test datasource
 const config : DataSourceConfig = {
     type: DataType.RECORDSET,
+    name: 'users',
     collection: {
         driverName: 'dexie',
         collectionName: 'users'
@@ -44,7 +45,7 @@ const config : DataSourceConfig = {
         }
     }
 };
-const datasource = new DataSource(config, ['users']);
+const datasource = new DataSource(config);
 
 const dummyRecord = { 
     email: 'jonathan.essex@test.com', 
@@ -64,7 +65,7 @@ describe('Test a Datasource with the built-in Dexie driver', ()=>{
         const state = store.getState();
         expect(id).toBeDefined();
         // check id is both in the redux store and the underlying database
-        expect(state.users.records[id]).toBeDefined();
+        expect(state.data.users.records[id]).toBeDefined();
         expect(await usersCollection.load(id)).toBeDefined();
     });
 
@@ -200,9 +201,9 @@ describe('Test a Datasource with the built-in Dexie driver', ()=>{
 
         const state = store.getState();
 
-        expect (state.users.records[id1]).toBeDefined();
-        expect (state.users.records[id2]).toBeUndefined();
-        expect (state.users.records[id3]).toBeDefined();
+        expect (state.data.users.records[id1]).toBeDefined();
+        expect (state.data.users.records[id2]).toBeUndefined();
+        expect (state.data.users.records[id3]).toBeDefined();
     });
 
     it('can search by a non-key field', async ()=>{
@@ -224,9 +225,9 @@ describe('Test a Datasource with the built-in Dexie driver', ()=>{
 
         const state = store.getState();
 
-        expect (state.users.records[id1]).toBeDefined();
-        expect (state.users.records[id2]).toBeDefined();
-        expect (state.users.records[id3]).toBeUndefined();
+        expect (state.data.users.records[id1]).toBeDefined();
+        expect (state.data.users.records[id2]).toBeDefined();
+        expect (state.data.users.records[id3]).toBeUndefined();
     });       
     
     it('can search by combined fields', async ()=>{
@@ -247,9 +248,9 @@ describe('Test a Datasource with the built-in Dexie driver', ()=>{
         const search = await store.dispatch(datasource.search({  email: { '>': 'bonzo@babble.test' }, dateOfBirth: { '<': DateTime.fromISO('1988-05-25T09:08:34.123') }}));
         const state = store.getState();
 
-        expect (state.users.records[id1]).toBeDefined();
-        expect (state.users.records[id2]).toBeUndefined();
-        expect (state.users.records[id3]).toBeUndefined();
+        expect (state.data.users.records[id1]).toBeDefined();
+        expect (state.data.users.records[id2]).toBeUndefined();
+        expect (state.data.users.records[id3]).toBeUndefined();
     });
     
     it('can remove a record', async ()=>{
@@ -269,6 +270,6 @@ describe('Test a Datasource with the built-in Dexie driver', ()=>{
         await store.dispatch(datasource.removeValue(id));        
         await expect(usersCollection.load(id)).rejects.toHaveProperty("code", ErrorCode.KEY_NOT_FOUND);
         const state = store.getState();        
-        expect (state.users.records[id]).toBeUndefined();
+        expect (state.data.users.records[id]).toBeUndefined();
     });   
 });

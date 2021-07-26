@@ -3,7 +3,7 @@ import { DataType } from '../src/datatype';
 import { configQueues, configRequests, state } from './testdata';
 import getRegistry from '../src/registry';
 
-const queueAccessor : Accessor = new BaseAccessor(configQueues, ['recordset', 'queues']);
+const queueAccessor : Accessor = new BaseAccessor(configQueues);
 
 describe('test simple accessor', ()=>{
 
@@ -13,7 +13,7 @@ describe('test simple accessor', ()=>{
     });
 
     it('can fetch config', () => {
-        expect(queueAccessor.getConfig()?.firestoreCollection).toBe('queues');
+        expect(queueAccessor.getConfig()?.collection).toBeDefined();
         expect(queueAccessor.getConfig('a')?.type).toBe(DataType.FIELDSET);
         expect(queueAccessor.getConfig('a','queueName')?.maxLength).toBe(32);
         expect(queueAccessor.getConfig('a','items',0)?.recordset).toBe('requests');
@@ -38,11 +38,11 @@ describe('test simple accessor', ()=>{
 
 });
 
-const requestAccessor = new BaseAccessor(configRequests, ['recordset', 'requests']);
+const requestAccessor = new BaseAccessor(configRequests);
 
 getRegistry(Accessor).register("requests", requestAccessor);
-getRegistry(Accessor).register("users", new BaseAccessor({ type: DataType.RECORDSET }, ['recordset', 'users']));
-getRegistry(Accessor).register("songs", new BaseAccessor({ type: DataType.RECORDSET }, ['recordset', 'songs']));
+getRegistry(Accessor).register("users", new BaseAccessor({ type: DataType.RECORDSET }, ['users']));
+getRegistry(Accessor).register("songs", new BaseAccessor({ type: DataType.RECORDSET }, ['songs']));
 
 describe('test accessor references', ()=>{
     it('can fetch a referenced field by key', ()=>{

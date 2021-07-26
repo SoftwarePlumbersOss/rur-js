@@ -1,11 +1,11 @@
 
 import { Accessor, BaseAccessor, AsyncAction, AddAction, Dispatch, DelegatingAccessor } from './accessor';
-import { FieldMapping } from './state';
-import { KeyPart } from './types';
-import { Config } from './config';
-import { PackedCriteria } from './criteria';
+import { FieldMapping } from '../state';
+import { KeyPart } from '../types';
+import { Config } from '../config';
+import { PackedCriteria } from '../criteria';
 import { Action, ValueAction, SearchAction } from './reducer';
-import getRegistry from './registry';
+import getRegistry from '../registry';
 
 export abstract class Collection {    
     abstract insertValue(value: FieldMapping, key : KeyPart) : Promise<void>;
@@ -33,14 +33,14 @@ export class DataSource extends DelegatingAccessor {
     }
 
     constructor(baseAccessor : Accessor, parent : Accessor);
-    constructor(config : Config, basePath: string[]);
-    constructor(baseOrConfig: Accessor | Config, parentOrPath : Accessor | string[]) {
-        if (baseOrConfig instanceof Accessor && parentOrPath instanceof Accessor)
-            super(baseOrConfig, parentOrPath)
-        else if (!(baseOrConfig instanceof Accessor) && !(parentOrPath instanceof Accessor))
-            super(new BaseAccessor(baseOrConfig, parentOrPath));
+    constructor(config : Config);
+    constructor(baseOrConfig: Accessor | Config, parent? : Accessor) {
+        if (baseOrConfig instanceof Accessor && parent !== undefined)
+            super(baseOrConfig, parent)
+        else if (!(baseOrConfig instanceof Accessor))
+            super(new BaseAccessor(baseOrConfig));
         else
-            throw new TypeError('either both params must be accessors, or neither');
+            throw new TypeError('second parameter must be an accessor');
     }
 
     get collection() : Collection {

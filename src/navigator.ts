@@ -2,16 +2,14 @@
 import { createBrowserHistory } from 'history';
 import { Action } from 'redux';
 import { ThunkAction, ThunkDispatch } from 'redux-thunk';
-import { Accessor } from './accessor';
-import { DataSource } from './datasource';
-import { pathToRegexp, match, parse, compile, Key } from 'path-to-regexp';
-import registry from './registry';
+import { pathToRegexp, Key } from 'path-to-regexp';
+import { Accessor, DataSource } from './accessor';
 import { ReferenceBoundary } from './exceptions';
 import { KeyPart } from './types';
+import { getBasePath } from './reducer';
+import registry from './registry';
 
 const history = createBrowserHistory();
-
-const datasources = registry(DataSource);
 
 enum ActionType {
     push = "RUR_NAV_PUSH",
@@ -27,14 +25,19 @@ interface PathAction extends Action {
     path: string
 }
 
-export type Dispatch = ThunkDispatch<any, undefined, NavigationAction>;
+type Dispatch = ThunkDispatch<any, undefined, NavigationAction>;
 
 export type AsyncAction<T extends NavigationAction> = ThunkAction<Promise<void>, any, undefined, T>;
 
-abstract class Navigator {
+export abstract class Navigator {
     abstract push(path : string) : AsyncAction<PathAction>;
     abstract pop() : AsyncAction<Action>;
     abstract replace(path: string) : AsyncAction<PathAction>;
+
+
+    protected getBaseState(state : any) : NavigatorState {
+        return [ ...getBasePath(), 'navigator' ].reduce((state : any, part : string)=>state[part], state) as NavigatorState;
+    }
 }
 
 interface NavigatorState {
@@ -50,7 +53,7 @@ const Guards = {
 
 class BaseNavigator extends Navigator {
 
-    static reduce(state: NavigatorState, action: NavigationAction) {
+    static reduce(state : NavigatorState = { path: '/' }, action: NavigationAction) {
         switch (action.type) {
             case ActionType.pop:
                 state = state.parent ?? state;
@@ -70,7 +73,7 @@ class BaseNavigator extends Navigator {
                 }
                 break;
         }
-
+        return state;
     }
 
     push(path: string): AsyncAction<PathAction> {
@@ -83,7 +86,7 @@ class BaseNavigator extends Navigator {
 
     pop(): AsyncAction<NavigationAction> {
         return (dispatch, getState) => {
-            const path = getState().navigator.path;
+            const path = this.getBaseState(getState()).path;
             history.replace(path);
             dispatch({type: ActionType.pop});
             return Promise.resolve();
@@ -101,25 +104,40 @@ class BaseNavigator extends Navigator {
 
 type DataPath = (Accessor | KeyPart)[]
 
-type NavigatorConfig = [pathTemplate : string, config: DataPath][]
+export type NavigatorConfig = [pathTemplate : string, config: DataPath][]
 
 class DataNavigator extends Navigator {
 
-    paths : { pathRegExp: RegExp, paramMap: { [index: string] : number }, config: DataPath } []
-    navigator : Navigator;
+    private paths : { pathRegExp: RegExp, paramMap: { [index: string] : number }, config: DataPath } []
+    private navigator : Navigator;
 
     constructor(navigator: Navigator, config : NavigatorConfig = []) {
         super();
-        this.paths = config.map(([pathTemplate, config]) => {
-            const pathParams : Key[] = [];
-            const pathRegExp = pathToRegexp(pathTemplate, pathParams);
-            const paramMap : { [index: string] : number } = {}
-            pathParams.forEach((key,index)=>{
-                if (key.name && Number.isNaN(key.name)) paramMap[key.name] = index+1;
-            });
-            return { pathRegExp, paramMap, config }
-        })
+        this.paths = [];
         this.navigator = navigator;
+        this.configure(config);
+    }
+
+    /** Add the specified configuration to the DataNavigator.
+     * 
+     * The navigator configuration maps application paths to data paths, ensuring that the
+     * correct data is loaded before a UI component is displayed.
+     * 
+     * @param config 
+     */
+    configure(config : NavigatorConfig = []) {
+        this.paths = [ 
+            ...this.paths, 
+            ...config.map(([pathTemplate, config]) => {
+                const pathParams : Key[] = [];
+                const pathRegExp = pathToRegexp(pathTemplate, pathParams);
+                const paramMap : { [index: string] : number } = {}
+                pathParams.forEach((key,index)=>{
+                    if (key.name && Number.isNaN(key.name)) paramMap[key.name] = index+1;
+                });
+                return { pathRegExp, paramMap, config }
+            })
+        ]
     }
 
     static loadDataPath(dispatch : Dispatch, getState : ()=>any, initialContext : Accessor, path : DataPath) : Promise<void> {
@@ -138,11 +156,11 @@ class DataNavigator extends Navigator {
                         if (err instanceof ReferenceBoundary) {
                             let accessor: DataSource;
                             if (typeof err?.config?.recordset === 'string')
-                                accessor = datasources.resolve(err.config.recordset);
+                                accessor = registry(DataSource).resolve(err.config.recordset);
                             else {
                                 let name = err?.config?.recordset.name;
-                                accessor = new DataSource(err?.config?.recordset, ["recordset", name]);
-                                datasources.register(name, accessor);
+                                accessor = new DataSource(err?.config?.recordset);
+                                registry(DataSource).register(name, accessor);
                             }
                             return DataNavigator.loadDataPath(dispatch, getState, accessor, [...err.key, ...tail]);
                         } else {
@@ -170,11 +188,11 @@ class DataNavigator extends Navigator {
     }
 
     protected parseDefaultPath(path : string) : DataPath | undefined {
-        const tokens = path.split('/');
+        const tokens = path.split('/').filter(token=>token.length > 0);
         if (tokens.length > 0) {
             const [head, ...tail] = tokens;
             try {
-                const datasource = datasources.resolve(head);
+                const datasource = registry(DataSource).resolve(head);
                 return [ datasource, ...tail ];
             } catch (err) {
                 if (err instanceof ReferenceError) 
@@ -208,7 +226,7 @@ class DataNavigator extends Navigator {
 
     pop(): AsyncAction<NavigationAction> {
         return (dispatch : Dispatch, getState) => this
-            .load(dispatch, getState, getState().navigator.path)
+            .load(dispatch, getState, this.getBaseState(getState()).path)
             .then(()=>dispatch(this.navigator.pop()));        
     }
 
@@ -218,4 +236,12 @@ class DataNavigator extends Navigator {
             .then(()=>dispatch(this.navigator.replace(path)));
     }
     
+}
+
+export const reduce = BaseNavigator.reduce;
+
+const navigator : DataNavigator = new DataNavigator(new BaseNavigator(), []);
+
+export function getBrowserNavigator() {
+    return navigator;
 }

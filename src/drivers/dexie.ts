@@ -1,4 +1,4 @@
-import { Driver, Collection as DriverCollection } from '../datasource';
+import { Driver, Collection as DriverCollection } from '../accessor';
 import { Field, FieldArray, FieldArrayContent, FieldMapping, NullablePrimitive } from '../state';
 import { KeyPart } from '../types';
 import { ErrorCode } from '../exceptions';

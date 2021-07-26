@@ -153,10 +153,8 @@ always performed at the level of an entire document or record.
 * When updating, a record from a Datasource will typically be copied into a Form (a separate accessor)
   and then copied back to the datasource when the update is complete.
 * Datasource actions are all asynchronous (implemented using redux-thunk)
-
-RUR provides compound actions which encapsulate this lifecycle and enable the developer to simply link
-data lifecycle actions with navigation actions in order to create actions which are specific to the
-application being developed.
+* A Form is an Accessor which provides two additional actions - 'submit' and 'cancel'. RUR provides
+  default behaviors for these actions via the Navigation component described below.
 
 ### Navigation and Workflow
 
@@ -170,7 +168,7 @@ data path is loaded. Some examples of simple data paths:
 
 * `/users/jonathan` Where 'users' is the name of a Datasource and 'jonathan' is the id of a record within it. 
 * `/users/jonathan/primaryGroup` Where 'primaryGroup' is a reference in the 'user' record to the 'groups' 
-   accessor which relates the   user to a specific group. 
+   accessor which relates the user to a specific group. 
 * `/groups/admin/members` Where 'groups' is a datasource, 'admin' is the id of a record within it, and 
    'members' is the name of a one-to-many relation within the 'group' record which links a group to multiple
    users.
@@ -186,11 +184,11 @@ render on `/users/:id` will have access to the user data for the specified id. T
 be configured to perform a mapping between the application path and the data path. For example:
 
 ```
-   const users = getRegistry(Datasource).resolve('users');
-   const config = {
-       '/players/:id' : [ users, 'id' ] 
-       '/users' : null       
-   }
+    const users = getRegistry(Datasource).resolve('users');
+    getBrowserNavigator().configure(
+        ['/players/:id', [ users, 'id' ]],
+        ['/users' : null]
+    });
 ```
 
 Will suppress the default mapping of the `/users` path and instead map the application path `/players/`_id_ to 
@@ -198,4 +196,30 @@ the data path `/users/`_id_. This would ensure that (for example) a UI component
 path `/players/:id/editor` can assume that the relevant user data will have been loaded from the back-end data store
 _before_ the UI component is rendered.
 
+A form may also appear in the data path. Data from the preceeding element in the data path will be loaded into
+the form. The 'submit' action for the form will, by default, validate the entire form, and if there is no error,
+save the data back to the first datasource preceeding the form in the data path. If the save operation completes
+successfully, the 'submit' action will then issue a navigator 'pop' action to return the user to the page which
+was open prior to navigating to the form. The 'cancel' action for the form will perform the 'pop' action without
+validating or saving the data. Some simple paths including forms:
+
+*  `/users/jonathan/userEditor` Will copy the record 'jonathan' from the 'users' datasource into the 'userEditor'
+   form. The form's submit action will write data back to the same record/datasource.
+*  `/users/userEditor` Will clear any existing data from the userEditor form. The form's submit action will write
+   a new record in the 'users' datasource.
+   
+As above, the mapping between the application path and the data path can be customised to inject forms without
+specifically referencing them on the path. The following snippet:
+
+```
+    const users = getRegistry(Datasource).resolve('users');
+    const editForm = getRegistry(Form).resolve('userEditor');
+
+    getBrowserNavigator().configure(
+        ['/players/:id', [ users, 'id', editForm ]],
+        ['/users' : null]
+    });
+```
+
+Would map the application path `/players/`_id_ to the data path `/users/`_id_`/userEditor`.
 
