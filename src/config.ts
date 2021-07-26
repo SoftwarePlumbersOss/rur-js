@@ -3,6 +3,13 @@ import { Accessor } from './accessor';
 import getRegistry from "./registry";
 import { Key } from './types';
 
+/** Core configuration object.
+ * 
+ * A configuration object *must* have a type but otherwise can contain pretty much anything. Information in
+ * the configuration object is exposed via the accessor, so it can be useful to park any and all configuration
+ * within the Config tree.
+ * 
+ */
 export interface Config {
     [prop : string] : any
     type: DataType
@@ -12,12 +19,32 @@ export interface Config {
 export interface FieldConfig extends Config {
 }
 
-// type == REFERENCE
+/** Configuration for a field with type === DataType.REFERENCE.
+ * 
+ * A reference field contains a link to a record in some other datasource. The value stored in the field is 
+ * simply the 'key' in the foreign datasource.
+ * 
+ */
 export interface ReferenceConfig extends Config {
     recordset: RecordsetConfig | string
 }
 
-// type == FIELDSSET
+/** Configuration for a field with type === DataType.REFERENCED_BY.
+ * 
+ * A 'referenced by' field provides a link to all the records in some other datasource which reference *this*
+ * record (because they have a 'REFERENCE' field containing the key of *this* record)
+ * 
+ */
+export interface ReferencedByConfig extends Config {
+    /** the datasource which references this record */
+    recordset: RecordsetConfig | string,
+    /** the name of the reference field in the foreign datasource which references this record */
+    field: string | string[]
+}
+
+/** Configuration for a field with type === DataType.FieldMapping.
+ * 
+ */
 export interface FieldSetConfig extends Config {
     fields : { [ prop: string ] : FieldConfig | FieldSetConfig }
 }

@@ -10,7 +10,8 @@ export enum DataType {
     NUMBER = "NUMBER",
     STRING = "STRING",
     DATETIME = "DATETIME",
-    REFERENCE = "REFERENCE"
+    REFERENCE = "REFERENCE",
+    REFERENCED_BY = "REFERENCED_BY"
 }
 
 /** Find the type of some state
@@ -32,6 +33,9 @@ export function getDataType(state?: State, config?: Config) : DataType {
         case DataType.REFERENCE:
             if (!Guards.isReference(state)) throw new TypeError(`State does not match configured type ${config.type}`)
             return config.type;
+        case DataType.REFERENCED_BY:
+            //  There's actually no state linked to a REFERENCED_BY field, it is a 'virtual' array 
+            return config.type;            
         case DataType.NUMBER:
             if (!Guards.isNumber(state)) throw new TypeError(`State does not match configured type ${config.type}`)
             return config.type;
