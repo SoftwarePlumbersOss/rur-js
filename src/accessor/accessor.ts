@@ -120,8 +120,9 @@ export abstract class Accessor {
 
     abstract getMetadata(state: any, ...key: Key) : MetadataPrimitive | undefined
     abstract getConfig(...key : Key) : Config | undefined
-    abstract setParent(parent : Accessor) : Accessor;
     abstract keys(state: any, ...key: Key) : Iterable<KeyPart>;
+
+    public abstract setParent(parent : Accessor) : Accessor;
 
     /** Set method.
      * 
@@ -227,7 +228,7 @@ export abstract class Accessor {
  export class BaseAccessor extends Accessor {
 
     protected config : Config
-    basePath: string[]
+    protected basePath: string[]
 
     constructor(config : Config, basePath? : string[], parent? : Accessor) {
         super(parent);
@@ -244,7 +245,7 @@ export abstract class Accessor {
         const base = this.getBaseState(state);
         let value : State | undefined;
         try {
-            value = this.getState(state, base, this.config, ...key);
+            value = this.getState(state, base, undefined, this.config, ...key);
             const type = getDataType(value, getConfig(this.config, ...key));
             switch (type) {
                 case DataType.RECORDSET:
@@ -277,13 +278,30 @@ export abstract class Accessor {
         }
     }
 
-
-    getBaseState(state : any) : State {
+    /** Get the 'root' state for this accessor.
+     * 
+     * An accessor has a unique name (the base path), which identifies it within the the RUR 'data' state
+     * object. If the RUR reducer is combined with other reducers, we also need to know the path to the 
+     * RUR reducer, which we get from the getBasePath method in reducer.ts
+     * 
+     * @param state 
+     * @returns the 'root' state for this accessor
+     */
+    protected getBaseState(state : any) : State {
         const fullPath = [ ...getBasePath(), 'data', ...this.basePath ];
         return fullPath.reduce((state : any, part : string)=>state[part], state) as State;
     }
     
-    getState(state : any, value : State, config? : Config, ...key : Key) : State | undefined {
+    /** Find 'raw' state.
+     * 
+     * @param state Top-level state
+     * @param value Our 'current' state - within which we are searching for information
+     * @param currentRecord The record within which the current state lies
+     * @param config The config associated with the current state
+     * @param key The key of the information we are looking for
+     * @returns The raw state associated with the given key in the current state
+     */
+    protected getState(state : any, value : State, currentRecord? : KeyPart, config? : Config, ...key : Key) : State | undefined {
         logEntry("getState", config, value, key);
         let result : State | undefined = value;
         if (key.length > 0) {
@@ -294,25 +312,31 @@ export abstract class Accessor {
                     result = (value as IRecordset).records[head as string];
                     if (result !== undefined) {
                         if (StateGuards.isRichField(result)) result = result.value;
-                        result = this.getState(state, result, getConfig(config, head), ...tail)
+                        result = this.getState(state, result, head, getConfig(config, head), ...tail)
                     }
                     break;
                 case DataType.ARRAY:
-                    if (typeof head !== 'number') throw new TypeError('key for array must be a numbet');
+                    if (typeof head !== 'number') throw new TypeError('key for array must be a number');
                     const array = value as FieldArray;
-                    result = this.getState(state, array[head], getConfig(config, head), ...tail);
+                    result = this.getState(state, array[head], currentRecord, getConfig(config, head), ...tail);
                     break;
                 case DataType.FIELD_MAPPING:
                     if (typeof head !== 'string') throw new TypeError('key for fieldset must be a string');
                     const fields = value as FieldMapping;
-                    result = this.getState(state, fields[head], getConfig(config, head), ...tail);
+                    result = this.getState(state, fields[head], currentRecord, getConfig(config, head), ...tail);
                     break;
                 case DataType.RECORD:
                     const record : Field = StateGuards.isRichField(value) ? value.value : value as FieldMapping
-                    result = this.getState(state, record, config, ...key);
+                    result = this.getState(state, record, currentRecord, config, ...key);
                     break;
                 case DataType.REFERENCE:   
                     throw new ReferenceBoundary(config as Config /* unless config exists, we can't tell it's a reference */, value as string, ...key);
+                case DataType.REFERENCED_BY:   
+                    throw new ReferenceBoundary(
+                        config as Config, /* unless config exists, we can't tell it's a reference by */
+                        currentRecord as KeyPart, /* a referenced by field can only occur within a record, so we *must* have a current record */
+                        ...key
+                    );                    
                 default:
                     throw new TypeError(`State type ${type} does not have member for ${key.join('.')}`)
 
@@ -321,7 +345,21 @@ export abstract class Accessor {
         return logReturn("getState", result);
     }
 
-    getMetadataCarrier(state : any, value : State, config? : Config, ...key : Key) : { carrier: IMetadataCarrier, key : Key } | undefined {
+    /** Get the metadata carrier for a given state item.
+     * 
+     * RUR does not attach metadata directly to primitive objects, arrays, or field mappings. Instead, the metadata for these
+     * state items is stored in the record or recordset which contains the item. The containing record/recordset is referred
+     * to as the 'Metadata Carrier'... this function finds the appropriate metadata carrier, which in turn allows us to retrieve
+     * the actual metadata.
+     * 
+     * @param state The root state
+     * @param value current item in which we are searching for metadata
+     * @param currentRecord the key of the record containing the current item
+     * @param config the configuration associated with the current item
+     * @param key the key of the metadata we are searching for
+     * @returns The metadata carrier, and the key of the metadata item we are looking for *relative to the carrier*.
+     */
+    protected getMetadataCarrier(state : any, value : State, currentRecord? : KeyPart, config? : Config, ...key : Key) : { carrier: IMetadataCarrier, key : Key } | undefined {
         logEntry("getMetadataCarrier", config, value, key);
         let result = undefined;
         if (key.length > 0) {
@@ -330,19 +368,25 @@ export abstract class Accessor {
             switch (type) {
                 case DataType.RECORDSET:
                     let record = (value as IRecordset).records[head as string];
-                    result = record ? this.getMetadataCarrier(state, record, getConfig(config, head), ...tail) : undefined
+                    result = record ? this.getMetadataCarrier(state, record, head, getConfig(config, head), ...tail) : undefined
                     break;
                 case DataType.FIELD_MAPPING:
                     if (typeof head !== 'string') throw new TypeError('key for fieldset must be a string');
                     const fields = value as FieldMapping;
-                    result = this.getMetadataCarrier(state, fields[head], getConfig(config, head), ...tail);
+                    result = this.getMetadataCarrier(state, fields[head], currentRecord, getConfig(config, head), ...tail);
                     break;
                 case DataType.RECORD:
                     let field : Field = StateGuards.isRichField(value) ? value.value : value as FieldMapping
-                    result = this.getMetadataCarrier(state, field, config, ...key);
+                    result = this.getMetadataCarrier(state, field, currentRecord, config, ...key);
                     break;
                 case DataType.REFERENCE:   
                     throw new ReferenceBoundary(config as Config /* unless config exists, we can't tell it's a reference */, value as string, ...key);
+                case DataType.REFERENCED_BY:   
+                    throw new ReferenceBoundary(
+                        config as Config, /* unless config exists, we can't tell it's a reference by */
+                        currentRecord as KeyPart, /* a referenced by field can only occur within a record, so we *must* have a current record */
+                        ...key
+                    );                    
                 default:
                     throw new TypeError(`State type ${type} does not have member for ${key.join('.')}`)
 
@@ -366,7 +410,7 @@ export abstract class Accessor {
             const base = this.getBaseState(state) ?? { records: {}, metadata: {} }; 
             let value : State | undefined;
             try {
-                value = this.getState(state, base, this.config, ...key);
+                value = this.getState(state, base, undefined, this.config, ...key);
                 if (value === undefined) return undefined;
                 let config = getConfig(this.config, ...key);
                 let type = getDataType(value, config);
@@ -437,7 +481,7 @@ export abstract class Accessor {
         return (dispatch : Dispatch, getState: ()=>any) => {
             dispatch({ type: ActionType.addValue, config: this.config, base: this.basePath, key, row });
             const state = getState();
-            return Promise.resolve((this.getState(state, this.getBaseState(state), this.getConfig(), ...key) as FieldArray).length-1);
+            return Promise.resolve((this.getState(state, this.getBaseState(state), undefined, this.getConfig(), ...key) as FieldArray).length-1);
         }
     }
 
@@ -464,7 +508,7 @@ export abstract class Accessor {
         let result : MetadataPrimitive | undefined;
         try {
             const metadataParent = key.slice(0,-1);
-            let carrier = this.getMetadataCarrier(state, base, this.config, ...metadataParent);
+            let carrier = this.getMetadataCarrier(state, base, undefined, this.config, ...metadataParent);
             if (carrier !== undefined) {
                 let metadataKey = carrier.key;
                 let child = metadataKey.reduce((carrier : any, part : KeyPart)=>carrier?.childMetadata && carrier.childMetadata[part], carrier.carrier);
@@ -489,7 +533,7 @@ export abstract class Accessor {
 
 export abstract class DelegatingAccessor extends Accessor {
 
-    accessor : Accessor
+    protected accessor : Accessor
 
     constructor(accessor : Accessor, parent?: Accessor) {
         super(parent);
@@ -563,7 +607,7 @@ export abstract class DelegatingAccessor extends Accessor {
 
 export class CalculatedFieldsAccessor extends DelegatingAccessor {
 
-    calculator : Calculator
+    protected calculator : Calculator
 
     constructor(accessor : Accessor, calculator : Calculator, parent? : Accessor) {
         super(accessor, parent);
@@ -590,7 +634,7 @@ export class CalculatedFieldsAccessor extends DelegatingAccessor {
 
 export class ValidatingAccessor extends DelegatingAccessor {
 
-    validator : Validator
+    protected validator : Validator
 
     constructor(accessor : Accessor, validator : Validator, parent? : Accessor) {
         super(accessor, parent);
@@ -618,7 +662,7 @@ export class ValidatingAccessor extends DelegatingAccessor {
 
 export class PathAccessor extends DelegatingAccessor {
 
-    path: Key
+    protected path: Key
 
     constructor(accessor : Accessor, path : Key, parent?: Accessor) {
         super(accessor, parent)

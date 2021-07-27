@@ -51,6 +51,31 @@ export const configRequests: DataSourceConfig = {
     }
 }
 
+export const configUsers: DataSourceConfig = {
+    name: 'users',
+    collection: {
+        driverName: 'dexie',
+        collectionName: 'users'
+    },
+    type: DataType.RECORDSET,
+    value: {
+        type: DataType.FIELD_MAPPING,
+        fields: {
+            firstName: {
+                type: DataType.STRING,
+            },
+            lastName: {
+                type: DataType.STRING,
+            },
+            requests: {
+                type: DataType.REFERENCED_BY,
+                recordset: 'requests',
+                field: 'user'
+            }
+        }
+    }
+}
+
 export const requests : IRecordset = { 
     metadata: {},
     records: {
