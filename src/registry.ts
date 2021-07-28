@@ -1,3 +1,4 @@
+/** A Quick and Dirty IOC framework */
 
 /** Registry for items of a particular type */
 class SubRegistry<T> {
@@ -28,7 +29,14 @@ class SubRegistry<T> {
 
 type Constructor<T> = Function & { prototype: T }
 
-/** Organize subregistries by type */
+/** Organize objects by type.
+ * 
+ * Associates data with a type (e.g. a constructor). Implements a reasonably
+ * efficient search for all data associated with a given class, which will 
+ * pull in both data directly linked to that class and data linked to any
+ * subclass of the requested class.
+ * 
+ */
 export class InheritanceTree<U> {
 
     private children : InheritanceTree<U>[]
@@ -41,12 +49,22 @@ export class InheritanceTree<U> {
         this.data = data;
     }
 
-    // t1 is a subclass or same class as T2
+    /** Test to see whether one type is a subclass of another.
+     * 
+     * @param t1 
+     * @param t2 
+     * @returns true if t1 is either identical to, or a subclass of, t2
+     */
     static isA<T1,T2>(t1 : Constructor<T1>, t2: Constructor<T2>) : boolean {
         return t1 === t2 || t2.prototype.isPrototypeOf(t1.prototype);
     }
 
-    add<T>(ctor : Constructor<T>, data : U) {
+    /** Add new data to the inheritance tree.
+     * 
+     * @param ctor Type with which we are associating some data
+     * @param data Data to associate with the type
+     */
+    add<T>(ctor : Constructor<T>, data : U) : void {
         for (let child of this.children) {
             // Simple; new class is a subclass of one of our children. Add it to
             // that child, then return
@@ -68,6 +86,7 @@ export class InheritanceTree<U> {
         this.children = newChildren;
     }
 
+    /** Get all data associated with a given type and its subtypes */
     get<T>(ctor: Constructor<T>) : U[] {
         if (InheritanceTree.isA(this.type, ctor)) {
             return this.children.map(child => child.get(ctor)).reduce((a,v)=>a.concat(v), [this.data]);
@@ -78,6 +97,7 @@ export class InheritanceTree<U> {
         }
     }
 
+    /** Get data associated specifically with the given type */
     getExact<T>(ctor: Constructor<T>) : U | undefined {
         if (InheritanceTree.isA(ctor, this.type)) {
             return (this.type === ctor) ? this.data : this.children.map(child => child.getExact(ctor)).find(result => result !== undefined);
@@ -85,18 +105,31 @@ export class InheritanceTree<U> {
             return undefined;
         }
     }
-
 }
 
+/** Global registry data */
 const globalRegistry = new InheritanceTree<SubRegistry<any>>(Object, new SubRegistry<Object>());
+
+/** Registry for data which is a subclass of some type T 
+ * 
+ */
 class GlobalRegistry<T extends Object> {
 
-    type : Constructor<T>;
+    /** All data in this registry is of the given type or a subclass of it */
+    private type : Constructor<T>;
 
     constructor(type: Constructor<T>) {
         this.type = type;
     }
 
+    /** Get an instance which has previously been registered (or for which a factory has been registered).
+     * 
+     * The returned instance must be of type T or of some subclass of it. Throws a ReferenceError if no
+     * instance or factory is registered with a compatible type and name.
+     * 
+     * @param key Unique name for the instance
+     * @returns An instance of this registry's type which has previously been registered (or for which there is a registered factory)
+     */
     resolve(key: string) : T {
         const subregistries = globalRegistry.get(this.type);
         // first try to resolve an existing instance
@@ -116,6 +149,7 @@ class GlobalRegistry<T extends Object> {
         throw new ReferenceError(`${key} does not exist in the registry`)
     }
 
+    /** Register an instance of type T under a given name */
     register(key: string, item : T) : void {
         let subregistry = globalRegistry.getExact(item.constructor);
         if (subregistry === undefined) {
@@ -125,6 +159,10 @@ class GlobalRegistry<T extends Object> {
         subregistry.register(key, item);
     }
 
+    /** Register a factory for instances of type T under a given name 
+     * 
+     * The actual instance will not be created until it is actually requested.
+     */
     registerFactory(key: string, itemFactory : ((key?: string)=>T)) : void {
         let subregistry = globalRegistry.getExact(this.type);
         if (subregistry === undefined) {
@@ -135,6 +173,7 @@ class GlobalRegistry<T extends Object> {
     }
 }
 
+/** Get a registry we can use to register global named instances of a given type */
 export default function getRegistry<T>(ctor: Constructor<T>) : GlobalRegistry<T> {
     return new GlobalRegistry(ctor);
 }
