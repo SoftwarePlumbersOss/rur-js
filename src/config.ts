@@ -39,7 +39,7 @@ export interface ReferencedByConfig extends Config {
     /** the datasource which references this record */
     recordset: RecordsetConfig | string,
     /** the name of the reference field in the foreign datasource which references this record */
-    field: string | string[]
+    field: Key
 }
 
 /** Configuration for a field with type === DataType.FieldMapping.

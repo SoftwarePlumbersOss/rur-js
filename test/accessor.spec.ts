@@ -1,6 +1,6 @@
 import { Accessor, BaseAccessor, View } from '../src/accessor';
 import { DataType } from '../src/datatype';
-import { configQueues, configRequests, state } from './testdata';
+import { configQueues, configRequests, configUsers, state } from './testdata';
 import getRegistry from '../src/registry';
 
 const queueAccessor : Accessor = new BaseAccessor(configQueues);
@@ -39,9 +39,10 @@ describe('test simple accessor', ()=>{
 });
 
 const requestAccessor = new BaseAccessor(configRequests);
+const userAccessor = new BaseAccessor(configUsers);
 
 getRegistry(Accessor).register("requests", requestAccessor);
-getRegistry(Accessor).register("users", new BaseAccessor({ type: DataType.RECORDSET }, ['users']));
+getRegistry(Accessor).register("users", userAccessor);
 getRegistry(Accessor).register("songs", new BaseAccessor({ type: DataType.RECORDSET }, ['songs']));
 
 describe('test accessor references', ()=>{
@@ -70,4 +71,10 @@ describe('test accessor references', ()=>{
     it('can fetch a referenced field by name', ()=>{
         expect(queueAccessor.get(state,'a','items',0,'user','firstName')).toBe('jonathan');
     });    
+});
+
+describe('test accessor referenced by', ()=>{
+    it('can fetch records which reference another', ()=>{
+        expect(userAccessor.keys(state,'a1user','requests')).toEqual(['a1']);
+    });
 });

@@ -17,39 +17,33 @@ export class PrimitiveEditor extends BaseStateEditor<NullablePrimitive> {
         this.metadata = metadata;
     }
 
-    getChild(head: KeyPart): Primitive {
+    private getAccessError(head: KeyPart) {
         if (this.getType() === DataType.REFERENCE)
-            throw new ReferenceBoundary(this.config as Config, head);
+            return new ReferenceBoundary(this.config as Config, undefined, this.state as KeyPart, head);
+        if (this.getType() === DataType.REFERENCED_BY)
+            return new ReferenceBoundary(this.config as Config, undefined, head);
         else
-            throw new TypeError(`no element ${head} in ${this.getType()}`);    
+            return new TypeError(`no element ${head} in ${this.getType()}`);    
+    }
+
+    getChild(head: KeyPart): Primitive {
+        throw this.getAccessError(head);
     }
 
     getChildMetadata(head: KeyPart): IMetadataCarrier | undefined {
-        if (this.getType() === DataType.REFERENCE)
-            throw new ReferenceBoundary(this.config as Config, head);
-        else
-            throw new TypeError(`no element ${head} in ${this.getType()}`);    
+        throw this.getAccessError(head);
     }
 
     insertChild(head: KeyPart, child: Primitive): this {
-        if (this.getType() === DataType.REFERENCE)
-            throw new ReferenceBoundary(this.config as Config, head);
-        else
-            throw new TypeError(`no element ${head} in ${this.getType()}`);    
+        throw this.getAccessError(head);
     }
 
     deleteChild(head: KeyPart): this {
-        if (this.getType() === DataType.REFERENCE)
-            throw new ReferenceBoundary(this.config as Config, head);
-        else
-            throw new TypeError(`no element ${head} in ${this.getType()}`);    
+        throw this.getAccessError(head);
     }
 
     setChild(head: KeyPart, child: Primitive): this {
-        if (this.getType() === DataType.REFERENCE)
-            throw new ReferenceBoundary(this.config as Config, head);
-        else
-            throw new TypeError(`no element ${head} in ${this.getType()}`);    
+        throw this.getAccessError(head);
     }
 
     mergeMetadata(metadata: IMetadataCarrier): this {

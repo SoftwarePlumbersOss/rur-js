@@ -97,6 +97,9 @@ export function apply(value : Field, filter : Filter, config? : Config) : boolea
         case DataType.RECORDSET:
             return false; // relevant operators not supported yet
         case DataType.REFERENCE:
+        case DataType.REFERENCED_BY:
+            // TODO: Throwing a ReferenceBoundary here doesn't help much. We can actually retrieve
+            // the accessor and query accross datasources if the data has already been loaded by the navigator
             throw new ReferenceBoundary(config as Config /* can only be a REFERENCE if config is defined*/);
         default:
             if (StateGuards.isPrimitive(value) && Guards.isPrimitive(filter.value)) {

@@ -3,7 +3,7 @@ import { State, Guards as StateGuards, IRecordset, RichField, NullablePrimitive,
 import { Config, getConfig } from '../config';
 import { ReferenceBoundary, Exception } from '../exceptions';
 import { Action, ActionType, MetadataAction, ValueAction, RowAction, MetadataValueAction, SearchAction } from './reducer';
-import { Key, KeyPart, Guards as KeyGuards } from '../types';
+import { Key, KeyPart, Guards as KeyGuards, Filterable, Mapable } from '../types';
 import { PackedCriteria } from '../criteria';
 import getRegistry from "../registry"
 import { ThunkAction, ThunkDispatch } from 'redux-thunk';
@@ -65,7 +65,7 @@ export class View {
         return this.accessor.set(value, ...this.path, ...key);
     }
 
-    keys() : Iterable<KeyPart> {
+    keys() : Filterable<KeyPart> & Mapable<KeyPart> {
         return this.accessor.keys(this.state, ...this.path);
     }
 
@@ -100,7 +100,7 @@ export abstract class Accessor {
         this.parent = parent;
     }
 
-    static keys(datum : DatumOut) : Iterable<KeyPart> {
+    static keys(datum : DatumOut) : Filterable<KeyPart>  & Mapable<KeyPart> {
         return (datum instanceof View) ? datum.keys() : [];
     }
 
@@ -115,12 +115,15 @@ export abstract class Accessor {
      * @return a View on an aggregate data item or a Primitive, OR an accessor which can retrieve the same thing.
      */
     abstract get(head: KeyPart, ...tail: Key) : Accessor;
-    abstract get(state: any, ...key : Key) : DatumOut
+    abstract get(state: any, ...key : Key) : DatumOut;
     abstract get(state: any, ...key : Key) : DatumOut | Accessor;
+
+    /** Get method for primitive values */
+    abstract getValue(state: any, ...key : Key) : NullablePrimitive | undefined;
 
     abstract getMetadata(state: any, ...key: Key) : MetadataPrimitive | undefined
     abstract getConfig(...key : Key) : Config | undefined
-    abstract keys(state: any, ...key: Key) : Iterable<KeyPart>;
+    abstract keys(state: any, ...key: Key) : Filterable<KeyPart> & Mapable<KeyPart>;
 
     public abstract setParent(parent : Accessor) : Accessor;
 
@@ -240,7 +243,7 @@ export abstract class Accessor {
         return new BaseAccessor(this.config, this.basePath, parent);
     }
 
-    keys(state: any, ...key : Key) : Iterable<KeyPart> {
+    keys(state: any, ...key : Key) : Filterable<KeyPart> & Mapable<KeyPart> {
         logEntry("BaseAccessor.keys", key);
         const base = this.getBaseState(state);
         let value : State | undefined;
@@ -253,7 +256,7 @@ export abstract class Accessor {
                     return recordset.filter?.keys ?? Object.keys(recordset.records);
                 case DataType.ARRAY:
                     const array = <FieldArray>value;
-                    return array.keys();
+                    return Object.keys(array); // TODO: improve this.
                 case DataType.FIELD_MAPPING:
                     const fields = <FieldMapping>value;
                     return Object.keys(fields);
@@ -263,7 +266,7 @@ export abstract class Accessor {
         } catch (err) {
             if (err instanceof ReferenceBoundary) {
                 let registry = getRegistry(Accessor);
-                let accessor;
+                let accessor : Accessor;
                 if (typeof err?.config?.recordset === 'string')
                     accessor = registry.resolve(err.config.recordset);
                 else {
@@ -271,7 +274,9 @@ export abstract class Accessor {
                     accessor = new BaseAccessor(err?.config?.recordset, ["recordset", name]);
                     registry.register(name, accessor);
                 }
-                return accessor.keys(state, ...err.key);
+                // Hmm, this doesn't quite work because the accessor returns a view for the reference field on the far side of the link.
+                // need a better way to filter.
+                return accessor.keys(state).filter(key => accessor.getValue(state, key, err?.config?.field) === err?.fromRecord);
             } else {
                 throw err;
             }
@@ -304,9 +309,9 @@ export abstract class Accessor {
     protected getState(state : any, value : State, currentRecord? : KeyPart, config? : Config, ...key : Key) : State | undefined {
         logEntry("getState", config, value, key);
         let result : State | undefined = value;
+        const type = getDataType(value, config);
         if (key.length > 0) {
             const [head, ...tail] = key;
-            const type = getDataType(value, config);
             switch (type) {
                 case DataType.RECORDSET:
                     result = (value as IRecordset).records[head as string];
@@ -330,17 +335,26 @@ export abstract class Accessor {
                     result = this.getState(state, record, currentRecord, config, ...key);
                     break;
                 case DataType.REFERENCE:   
-                    throw new ReferenceBoundary(config as Config /* unless config exists, we can't tell it's a reference */, value as string, ...key);
+                    throw new ReferenceBoundary(config as Config /* unless config exists, we can't tell it's a reference */, currentRecord, value as string, ...key);
                 case DataType.REFERENCED_BY:   
                     throw new ReferenceBoundary(
                         config as Config, /* unless config exists, we can't tell it's a reference by */
-                        currentRecord as KeyPart, /* a referenced by field can only occur within a record, so we *must* have a current record */
+                        currentRecord, 
                         ...key
                     );                    
                 default:
                     throw new TypeError(`State type ${type} does not have member for ${key.join('.')}`)
 
             }
+        } else {
+            // For REFERENCED_BY field we hit the Reference Boundary if we try to access the field itself, because
+            // the field has no intrinsic data (unlike the REFERENCE field, which contains the key to the foreign object)
+            if (type === DataType.REFERENCED_BY)
+                throw new ReferenceBoundary(
+                    config as Config, /* unless config exists, we can't tell it's a reference by */
+                    currentRecord, 
+                    ...key
+                );                    
         }
         return logReturn("getState", result);
     }
@@ -380,11 +394,11 @@ export abstract class Accessor {
                     result = this.getMetadataCarrier(state, field, currentRecord, config, ...key);
                     break;
                 case DataType.REFERENCE:   
-                    throw new ReferenceBoundary(config as Config /* unless config exists, we can't tell it's a reference */, value as string, ...key);
+                    throw new ReferenceBoundary(config as Config /* unless config exists, we can't tell it's a reference */, currentRecord, value as string, ...key);
                 case DataType.REFERENCED_BY:   
                     throw new ReferenceBoundary(
                         config as Config, /* unless config exists, we can't tell it's a reference by */
-                        currentRecord as KeyPart, /* a referenced by field can only occur within a record, so we *must* have a current record */
+                        currentRecord,
                         ...key
                     );                    
                 default:
@@ -419,6 +433,7 @@ export abstract class Accessor {
                     case DataType.RECORDSET:
                     case DataType.FIELD_MAPPING:
                     case DataType.REFERENCE:
+                    case DataType.REFERENCED_BY:
                     case DataType.ARRAY:
                             result = new View(this, state, ...key);
                         break;
@@ -428,6 +443,10 @@ export abstract class Accessor {
                 return logReturn("BaseAccessor.get", result);
             } catch (err) {
                 if (err instanceof ReferenceBoundary) {
+                    // Note: we don't attempt to find a Datasource here because the load operation
+                    // would be asyncronous and 'get' needs to return an immediate value. Thus, if the
+                    // data is not already loaded, this will return undefined. The navigator component
+                    // will take care of doing the load for us instead.
                     let registry = getRegistry(Accessor);
                     let accessor;
                     if (typeof err?.config?.recordset === 'string')
@@ -444,6 +463,28 @@ export abstract class Accessor {
             }
         }
     }
+
+    getValue(state: any, ...key: Key): NullablePrimitive | undefined {
+        logEntry("BaseAccessor.getPrimitive", key);
+        const base = this.getBaseState(state) ?? { records: {}, metadata: {} };
+        let value: State | undefined;
+        value = this.getState(state, base, undefined, this.config, ...key);
+        if (value === undefined) return undefined;
+        let config = getConfig(this.config, ...key);
+        let type = getDataType(value, config);
+        let result: View | NullablePrimitive
+        switch (type) {
+            case DataType.REFERENCE:
+            case DataType.NUMBER:
+            case DataType.STRING:
+                result = value as NullablePrimitive;
+                break;
+            default:
+                throw new TypeError('Not a primtive');
+        }
+        return logReturn("BaseAccessor.getPrimitive", result);
+    }
+
 
     set(value: DatumIn, ...key : Key) : ValueAction {
         if (Guards.isRichField(value)) {
@@ -546,11 +587,15 @@ export abstract class DelegatingAccessor extends Accessor {
         return this.accessor.get(stateOrHead, ...key);
     }
 
+    getValue(state: any, ...key: Key): NullablePrimitive | undefined { 
+        return this.accessor.getValue(state, ...key);
+    }    
+
     set(value: DatumIn, ...key : Key) : ValueAction | AsyncAction<ValueAction> {
         return this.accessor.set(value, ...key);
     }    
 
-    keys(state : any, ...key : Key) : Iterable<KeyPart> {
+    keys(state : any, ...key : Key) : Filterable<KeyPart> & Mapable<KeyPart> {
         return this.accessor.keys(state, ...key);
     }
 

@@ -159,13 +159,13 @@ class DataNavigator extends Navigator {
                         return DataNavigator.loadDataPath(dispatch, getState, initialContext.get(head), tail);
                     } catch (err) {
                         if (err instanceof ReferenceBoundary) {
-                            let accessor: DataSource;
+                            let accessor: Accessor;
                             if (typeof err?.config?.recordset === 'string')
-                                accessor = registry(DataSource).resolve(err.config.recordset);
+                                accessor = registry(Accessor).resolve(err.config.recordset);
                             else {
                                 let name = err?.config?.recordset.name;
                                 accessor = new DataSource(err?.config?.recordset);
-                                registry(DataSource).register(name, accessor);
+                                registry(Accessor).register(name, accessor);
                             }
                             return DataNavigator.loadDataPath(dispatch, getState, accessor, [...err.key, ...tail]);
                         } else {

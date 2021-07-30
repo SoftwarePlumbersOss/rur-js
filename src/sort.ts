@@ -62,7 +62,8 @@ export function apply(a : Field, b: Field, sort : Order | Sort, config? : Config
         case DataType.RECORDSET:
             throw new TypeError('cannot sort on a recordset field');
         case DataType.REFERENCE:
-            throw new ReferenceBoundary(config as Config /* can only be a REFERENCE if config is defined*/);
+        case DataType.REFERENCED_BY:
+                throw new ReferenceBoundary(config as Config /* can only be a REFERENCE if config is defined*/);
         default:
             if (StateGuards.isPrimitive(a) && StateGuards.isPrimitive(b)) {
                 switch (sort) {
